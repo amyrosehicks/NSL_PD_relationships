@@ -70,3 +70,24 @@ fishers_test_intersection_lists <- function(genes, list1, results_df){
   fish <- CoExpNets::testGeneSet(g1, g_overlap, l1, total_targets)
   p.adjust(fish$p.value, method = "fdr")
 }
+
+# n_regulons <- c(3,4,5,6)
+# list1 <- c(mendelian_PA_list$Ensembl_ID)
+# results_df <- gt_3regs
+
+fishers_test_lists2 <- function(n_regulons, list1, results_df){
+  # Filter for regulator gene
+  df_nregs <- dplyr::filter(results_df, n %in% n_regulons)
+  # Filter all results for target genes
+  df_list1 <- results_df %>%
+    dplyr::filter(Target %in% list1)
+  # Calculate totals for fishers test
+  g1 <- length(unique(df_nregs$Target))
+  g_overlap <- length(intersect(df_nregs$Target, df_list1$Target))
+  l1 <- length(unique(df_list1$Target))
+  total_targets <- length(unique(results_df$Target))
+  # Do test
+  fish <- CoExpNets::testGeneSet(g1, g_overlap, l1, total_targets)
+  p.adjust(fish$p.value, method = "fdr")
+}
+
