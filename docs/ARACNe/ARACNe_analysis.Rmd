@@ -94,6 +94,11 @@ CoExp10UKBEC::initDb(mandatory = T)
 ensembl = useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl")
 # Load gene list (see Genelists.R for details)
 NSL_list <- read.delim(file.path(here::here("data","Gene_lists", "NSL_list.txt")))
+# Load PD lists
+PD_mendelian_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_mendelian_list.txt")))
+PD_mendelian_ENSG <- as.character(PD_mendelian_list$Ensembl_ID)
+PD_GWAS_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_GWAS_list.txt")))
+PD_GWAS_ENSG <- as.character(PD_GWAS_list$Ensembl_ID)
 ```
 
 ```{r, results = FALSE}
@@ -217,6 +222,8 @@ uk_aracne <- read.delim(file.path(here::here("data", "ARACNe", "ukbec_expr.txt.a
 ```
 
 # 4. GTEx results 
+## 4.1. Characteristics {.tabset}
+### Individual regulons
 The function returned a total of **`r nrow(gt_aracne)`** possible regulatory relationships involving the NSL genes within the `red` and `darkred` modules. 
 ```{r}
 # Add MI quantile to result
@@ -314,84 +321,22 @@ ggplot(gt_aracne_regulon, aes(Regulon_1, Regulon_2)) +
   labs(y = "Regulon 1", x = "Regulon 2")
 ```
 
-## 4.1. Filtered for gene lists {.tabset}
-### PD mendelian
+### NSL regulon
+Genes appearing in 3 or more of the regulons were focused on, termed the **NSL regulon**. 
 ```{r}
-# Load list
-PD_mendelian_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_mendelian_list.txt")))
-# Make ENSG list
-PD_mendelian_ENSG <- as.character(PD_mendelian_list$Ensembl_ID)
+# Filter results for genes in 3+ regulons
+gt_regs_count <- gt_aracne %>%
+  dplyr::count(Target)
+gt_regs <- dplyr::left_join(gt_aracne, gt_regs_count, by = "Target")
+gt_3regs <- gt_regs %>%
+  dplyr::filter(n >=3)
 ```
 
-```{r}
-# Filter results for gene list
-gt_PDmend <- dplyr::filter(gt_aracne, Target %in% PD_mendelian_ENSG)
-gt_PDmend$Target_gene <- as.character(gt_PDmend$Target)
-# Add target gene symbols
-for (i in PD_mendelian_list$Ensembl_ID) {
-  loc <- match(i, PD_mendelian_list$Ensembl_ID)
-  gt_PDmend$Target_gene[gt_PDmend$Target_gene == i] <- PD_mendelian_list$Gene_symbol[loc]
-}
-```
+The number of unique genes predicted to be regulated by 3 or more NSL complex genes is: `r nrow(unique(gt_3regs$Target))`.
 
-MI quantiles for each regulator-target pair:
-```{r}
-# How many times does each target appear
-gt_PDmend2 <- dplyr::select(gt_PDmend, Regulator_gene, Target_gene, MI_quantile)
-# Show MI quantile for all relationships
-tidyr::spread(gt_PDmend2, Regulator_gene, MI_quantile)
-```
-
-### PD GWAS
-```{r}
-# Load list
-PD_GWAS_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_GWAS_list.txt")))
-# Make ENSG list
-PD_GWAS_ENSG <- as.character(PD_GWAS_list$Ensembl_ID)
-```
-
-```{r}
-# Filter results for gene list
-gt_GWAS <- dplyr::filter(gt_aracne, Target %in% PD_GWAS_ENSG)
-gt_GWAS$Target_gene <- as.character(gt_GWAS$Target)
-# Add target gene symbols
-for (i in PD_GWAS_list$Ensembl_ID) {
-  loc <- match(i, PD_GWAS_list$Ensembl_ID)
-  gt_GWAS$Target_gene[gt_GWAS$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
-}
-```
-
-MI quantiles for each regulator-target pair:
-```{r}
-# How many times does each target appear
-gt_GWAS2 <- dplyr::select(gt_GWAS, Regulator_gene, Target_gene, MI_quantile)
-# Show MI quantile for all relationships
-tidyr::spread(gt_GWAS2, Regulator_gene, MI_quantile)
-```
-
-## 4.2. Summary {.tabset}
-### PD gene list enrichments 
-The appearance of each gene list in the results for *KAT8* and *KANSL1* were tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these gene list appeared as targets for these two genes more often than would be expected by chance.
-```{r}
-# Make summary dataframe
-gt_results_test <- as.data.frame(matrix(nrow = 2, ncol = 4))
-colnames(gt_results_test) <- c("KAT8", "KANSL1", "Union", "Intersection")
-rownames(gt_results_test) <- c("PD_mendelian", "PD_GWAS")
-# Perform Fishers tests
-gt_results_test[1,1] <- fishers_test_lists(c("KAT8"), PD_mendelian_ENSG, gt_aracne)
-gt_results_test[1,2] <- fishers_test_lists(c("KANSL1"), PD_mendelian_ENSG, gt_aracne)
-gt_results_test[1,3] <- fishers_test_lists(c("KANSL1", "KAT8"), PD_mendelian_ENSG, gt_aracne)
-gt_results_test[2,1] <- fishers_test_lists(c("KAT8"), PD_GWAS_ENSG, gt_aracne)
-gt_results_test[2,2] <- fishers_test_lists(c("KANSL1"), PD_GWAS_ENSG, gt_aracne)
-gt_results_test[2,3] <- fishers_test_lists(c("KANSL1", "KAT8"), PD_GWAS_ENSG, gt_aracne)
-# Perform tests on intersections
-gt_results_test[1,4] <- fishers_test_intersection_lists(c("KANSL1", "KAT8"), PD_mendelian_ENSG, gt_aracne)
-gt_results_test[2,4] <- fishers_test_intersection_lists(c("KANSL1", "KAT8"), PD_GWAS_ENSG, gt_aracne)
-# Show results 
-gt_results_test
-```
-
-The appearance of each gene list in the results for the remaining NSL genes within the **red and darkred** modules were also tested for significance using a **Fishers exact test**.
+## 4.2. Gene set enrichment analysis {.tabset}
+### Individual regulons
+The appearance of each PD gene list in the regulons were tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these gene list appeared as targets for these two genes more often than would be expected by chance.
 ```{r}
 # Make summary dataframe
 gt_NSLresults_test <- as.data.frame(matrix(nrow = 2, ncol = 6))
@@ -431,7 +376,51 @@ ggplot(fig_gt, aes(Gene, Gene_list)) +
   labs(y = "Gene list", x = "Gene")
 ```
 
-### GO gene set enrichments
+### NSL regulon
+The NSL regulon was also filtered for genes linked to Mendelian PD.
+```{r}
+# Filter
+gt_3regs_mendPD <- gt_3regs %>%
+  dplyr::filter(Target %in% PD_mendelian_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  gt_3regs_mendPD$Target_gene[gt_3regs_mendPD$Target_gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Show results
+gt_3regs_mendPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(gt_3regs_mendPD$Target_gene))` different genes associated with Mendelian PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_mendelian_list$Ensembl_ID), gt_regs)
+```
+
+The NSL regulon was also filtered for genes linked to sporadic PD. 
+```{r}
+# Filter
+gt_3regs_gwasPD <- gt_3regs %>%
+  dplyr::filter(Target %in% PD_GWAS_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  gt_3regs_gwasPD$Target_gene[gt_3regs_gwasPD$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Show results
+gt_3regs_mendPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(gt_3regs_gwasPD$Target_gene))` different genes associated with sporadic PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_GWAS_list$Ensembl_ID), gt_regs)
+```
+
+## 4.3. GO term enrichment analysis
+### Individual regulons
 Each regulon was examined for the **enrichment** of different gene ontology terms using `gProfiler`. 
 ```{r, eval = FALSE}
 # Filter KANSL1 results
@@ -526,13 +515,20 @@ regs_gt_GO$go_type[regs_gt_GO$go_type=="MF"] <- "GO: MF"
 regs_gt_GO$go_type[regs_gt_GO$go_type=="CC"] <- "GO: CC"
 # GO figure
 ggplot2::ggplot(regs_gt_GO, aes(x = gene_list, y = parent_term)) + 
-  geom_point(size = 3, aes(colour = -log10(`FDR`))) +
+  geom_point(size = 2, aes(colour = -log10(`FDR`))) +
   scale_color_continuous(low = "lightgoldenrod", high = "red4") +
   facet_grid(go_type ~., scales = "free", space = "free") +
-  labs(x = "Regulon", y = "")
+  labs(x = "Regulon", y = "") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
-Genes appearing in **3 or more** regulons were prioritised to reduce noise and focus on genes representing NSL complex activity as a whole. This list was analysed in a similar way to the individual regulons. 
+### NSL regulon
+The NSL regulon was was analysed in a similar way to the individual regulons. 
 ```{r}
 # Filter results for genes in 3+ regulons
 gt_regs_count <- gt_aracne %>%
@@ -645,10 +641,17 @@ gt_3regs_GO %>%
   geom_col() +
   scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
   facet_grid(go_type ~., scales = "free", space = "free") +
-  labs(y = "", x = "Mean intersection ratio")
+  labs(y = "", x = "Mean intersection ratio") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
-### KEGG/reactome gene set enrichments
+## 4.4. KEGG/reactome term entichment {.tabset}
+### Individual regulons
 Each regulon was also examined for the **enrichment** of different KEGG and reactome terms using `gProfiler`. These terms were then compared to a list of **46** terms **"nominated as potentially linked to PD risk through common genetic variation"** obtained from [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/). Firstly, as this list only contained terms from KEGG, Reactome and Pathway Interaction Database sources, the `gProfiler` results for each regulon were filtered for these sources and formatted. 
 ```{r}
 # Filter for KEGG and REACTOME terms
@@ -726,9 +729,16 @@ ggplot2::ggplot(all_terms_gt, aes(x = gene_list, y = go_term)) +
   geom_point(size = 4, aes(colour = -log10(`FDR`))) +
   scale_color_continuous(low = "lightgoldenrod", high = "red4") +
   facet_grid(go_type ~., scales = "free", space = "free") +
-  labs(x = "Regulon", y = "")
+  labs(x = "Regulon", y = "") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
+### NSL regulon
 The KEGG and reactome term enrichments for the list of genes appearing in **3 or more** regulons was also compared to this PD-linked list of terms. 
 ```{r}
 # Filter for KEGG and REACTOME terms
@@ -760,7 +770,6 @@ comparison_gt_3regs_1 <- comparison_gt_3regs_1 %>%
 # All required text changes have already been made in previous check step
 ```
 
-The list of terms enriched for each NSL regulon was then filtered for those linked to PD by [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/).
 ```{r}
 # Filter ARACNe list for paper list
 all_terms_gt_3regs <- gt_3regs_KGRE %>% 
@@ -781,10 +790,18 @@ all_terms_gt_3regs %>%
   scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
   facet_grid(go_type ~., scales = "free", space = "free") +
   theme(strip.text.y = element_text(angle = 0))+
-  labs(y = "", x = "Intersection ratio")
+  labs(y = "", x = "Intersection ratio") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
 # 5. UKBEC results 
+## 5.1. Characteristics {.tabset}
+### Individual regulons
 The function returned a total of **`r nrow(uk_aracne)`** possible regulatory relationships involving the NSL genes within the `black` module.
 ```{r}
 # Add MI quantile to result
@@ -880,8 +897,21 @@ ggplot(gt_aracne_regulon, aes(Regulon_1, Regulon_2)) +
   labs(y = "Regulon 1", x = "Regulon 2")
 ```
 
-## 5.1. Filtered for gene lists {.tabset}
-### PD mendelian
+### NSL regulon
+Genes appearing in 3 or more of the regulons were focused on, termed the **NSL regulon**. 
+```{r}
+# Filter results for genes in 3+ regulons
+uk_regs_count <- uk_aracne %>%
+  dplyr::count(Target)
+uk_regs <- dplyr::left_join(uk_aracne, uk_regs_count, by = "Target")
+uk_3regs <- uk_regs %>%
+  dplyr::filter(n >=3)
+```
+
+The number of unique genes predicted to be regulated by 3 or more NSL complex genes is: `r nrow(unique(uk_3regs$Target))`.
+
+## 5.2. Gene set enrichment analysis {.tabset}
+### Individual regulons
 ```{r}
 # Add columns with UKBEC IDs to gene list
 PD_mendelian_list$UKBEC <- as.character(PD_mendelian_list$Gene_symbol)
@@ -891,24 +921,11 @@ for (i in trans.table$Gene_Symbol) {
   loc <- match(i, trans.table$Gene_Symbol)
   PD_mendelian_list$UKBEC_id[PD_mendelian_list$UKBEC_id == i] <- trans.table$XtID[loc]
 }
-```
-
-```{r}
 # Black module results
-uk_aracne_PDmend <- uk_aracne
-# Filter for gene list
-uk_aracne_PDmend <- dplyr::filter(uk_aracne_PDmend, Target_gene %in% PD_mendelian_list$UKBEC)
+uk_aracne_PDmend <- uk_aracne %>%
+  dplyr::filter(Target_gene %in% PD_mendelian_list$UKBEC)
 ```
 
-MI quantiles for each regulator-target pair:
-```{r}
-# How many times does each target appear
-uk_aracne_PDmend2 <- dplyr::select(uk_aracne_PDmend, Regulator_gene, Target_gene, MI_quantile)
-# Show MI quantile for all relationships
-tidyr::spread(uk_aracne_PDmend2, Regulator_gene, MI_quantile)
-```
-
-### PD sporadic
 ```{r}
 # Add columns with UKBEC IDs to gene list
 PD_GWAS_list$UKBEC <- as.character(PD_GWAS_list$Gene_symbol)
@@ -922,46 +939,12 @@ for (i in trans.table$Gene_Symbol) {
   loc <- match(i, trans.table$Gene_Symbol)
   PD_GWAS_list$UKBEC_id[PD_GWAS_list$UKBEC_id == i] <- trans.table$XtID[loc]
 }
-```
-
-```{r}
 # Black module results
-uk_aracne_GWAS <- uk_aracne
-# Filter for gene list
-uk_aracne_GWAS <- dplyr::filter(uk_aracne_GWAS, Target_gene %in% PD_GWAS_list$UKBEC)
+uk_aracne_GWAS <- uk_aracne %>%
+  dplyr::filter(Target_gene %in% PD_GWAS_list$UKBEC)
 ```
 
-MI quantiles for each regulator-target pair:
-```{r}
-# How many times does each target appear
-uk_aracne_GWAS2 <- dplyr::select(uk_aracne_GWAS, Regulator_gene, Target_gene, MI_quantile)
-# Show MI quantile for all relationships
-tidyr::spread(uk_aracne_GWAS2, Regulator_gene, MI_quantile)
-```
-
-## 5.2. Summary {.tabset}
-### PD gene list enrichments
-The appearance of each gene list in the results for *KAT8* and *KANSL1* were tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these gene list appeared as targets for these two genes more often than would be expected by chance. 
-```{r}
-# Make summary dataframe
-uk_aracne_results_test <- as.data.frame(matrix(nrow = 2, ncol = 4))
-colnames(uk_aracne_results_test) <- c("KAT8", "KANSL1", "Union", "Intersection")
-rownames(uk_aracne_results_test) <- c("PD_mendelian", "PD_GWAS")
-# Perform Fishers tests for first 3 columns
-uk_aracne_results_test[1,1] <- fishers_test_lists(c("KAT8"), PD_mendelian_list$UKBEC_id, uk_aracne)
-uk_aracne_results_test[1,2] <- fishers_test_lists(c("KANSL1"), PD_mendelian_list$UKBEC_id, uk_aracne)
-uk_aracne_results_test[1,3] <- fishers_test_lists(c("KANSL1", "KAT8"), PD_mendelian_list$UKBEC_id, uk_aracne)
-uk_aracne_results_test[2,1] <- fishers_test_lists(c("KAT8"), PD_GWAS_list$UKBEC_id, uk_aracne)
-uk_aracne_results_test[2,2] <- fishers_test_lists(c("KANSL1"), PD_GWAS_list$UKBEC_id, uk_aracne)
-uk_aracne_results_test[2,3] <- fishers_test_lists(c("KANSL1", "KAT8"), PD_GWAS_list$UKBEC_id, uk_aracne)
-# Perform tests on intersections
-uk_aracne_results_test[1,4] <- fishers_test_intersection_lists(c("KANSL1", "KAT8"), PD_mendelian_list$UKBEC_id, uk_aracne)
-uk_aracne_results_test[2,4] <- fishers_test_intersection_lists(c("KANSL1", "KAT8"), PD_GWAS_list$UKBEC_id, uk_aracne)
-# Show results 
-uk_aracne_results_test
-```
-
-The appearance of each gene list in the results for the remaining NSL genes within the **black** module were also tested for significance using a **Fishers exact test**. 
+The appearance of each gene list in the results for the remaining NSL genes within the **black** module were tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these gene list appeared as targets for these two genes more often than would be expected by chance. 
 ```{r}
 # Make summary dataframe
 uk_aracne_NSLresults_test <- as.data.frame(matrix(nrow = 2, ncol = 4))
@@ -997,7 +980,51 @@ ggplot(fig_UK, aes(Gene, Gene_list)) +
   labs(y = "Gene list", x = "Gene")
 ```
 
-### GO gene set enrichments
+### NSL regulon
+The NSL regulon was also filtered for genes linked to Mendelian PD.
+```{r}
+# Filter
+uk_3regs_mendPD <- uk_3regs %>%
+  dplyr::filter(Target %in% PD_mendelian_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  uk_3regs_mendPD$Target_gene[uk_3regs_mendPD$Target_gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Show results
+uk_3regs_mendPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(uk_3regs_mendPD$Target_gene))` different genes associated with Mendelian PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_mendelian_list$Ensembl_ID), uk_regs)
+```
+
+The NSL regulon was also filtered for genes linked to sporadic PD. 
+```{r}
+# Filter
+uk_3regs_gwasPD <- uk_3regs %>%
+  dplyr::filter(Target %in% PD_GWAS_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  uk_3regs_gwasPD$Target_gene[uk_3regs_gwasPD$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Show results
+uk_3regs_mendPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(uk_3regs_gwasPD$Target_gene))` different genes associated with sporadic PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_GWAS_list$Ensembl_ID), uk_regs)
+```
+
+## 5.3. GO term enrichment analysis {.tabset}
+### Individual regulons
 Each regulon was then examined for the **enrichment** of different **gene ontology terms** using `gProfiler`. 
 ```{r, eval = FALSE}
 # Filter KANSL1 results
@@ -1089,19 +1116,17 @@ ggplot2::ggplot(regs_uk_GO, aes(x = gene_list, y = parent_term)) +
   geom_point(size = 3, aes(colour = -log10(`FDR`))) +
   scale_color_continuous(low = "lightgoldenrod", high = "red4") +
   facet_grid(go_type ~., scales = "free", space = "free") +
-  labs(x = "Regulon", y = "")
+  labs(x = "Regulon", y = "") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
-Genes appearing in **3 or more** regulons were prioritised to reduce noise and focus on genes representing NSL complex activity as a whole. This list was analysed in a similar way to the individual regulons. 
-```{r}
-# Filter results for genes in 3+ regulons
-uk_regs_count <- uk_aracne %>%
-  dplyr::count(Target)
-uk_regs <- dplyr::left_join(uk_aracne, uk_regs_count, by = "Target")
-uk_3regs <- uk_regs %>%
-  dplyr::filter(n >=3)
-```
-
+### NSL regulon
+The NSL regulon was analysed in a similar way to the individual regulons. 
 ```{r, eval = FALSE}
 # Run gprofiler
 uk_3regs_gprof <- gprofiler2::gost(query = uk_3regs$Target_gene)
@@ -1205,11 +1230,18 @@ uk_3regs_GO %>%
   geom_col() +
   scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
   facet_grid(go_type ~., scales = "free", space = "free") +
-  labs(y = "", x = "Mean intersection ratio")
+  labs(y = "", x = "Mean intersection ratio") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
-### KEGG/reactome gene set enrichments
-These terms were then compared to a list of **46** terms **"nominated as potentially linked to PD risk through common genetic variation"** obtained from [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/). Firstly, as this list only contained terms from KEGG, Reactome and Pathway Interaction Database sources, the `gProfiler` results for each regulon were filtered for these sources and formatted. 
+## 5.4. KEGG/reactome term enrichment analysis {.tabset}
+### Individual regulons 
+These terms were then compared to the list if PD-linked terms from [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/). Firstly, as this list only contained terms from KEGG, Reactome and Pathway Interaction Database sources, the `gProfiler` results for each regulon were filtered for these sources and formatted. 
 ```{r}
 # Filter for KEGG and REACTOME terms
 regs_uk_KGRE <- regs_uk_gprof %>%
@@ -1241,7 +1273,7 @@ comparison_uk_1 <- comparison_uk %>%
 # Go through by eye- no terms were comparable so list can be filtered as is
 ```
 
-The list of terms enriched for each NSL regulon was then filtered for those linked to PD by [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/).
+The list of terms enriched for each NSL regulon was then filtered for the PD-linked terms. 
 ```{r}
 # Filter ARACNe list for paper list
 all_terms_uk <- regs_uk_KGRE %>% 
@@ -1252,7 +1284,8 @@ all_terms_uk <- regs_uk_KGRE %>%
 
 **No terms** were found to be common between the two lists.  
 
-The KEGG and reactome term enrichments for the list of genes appearing in **3 or more** regulons was also compared to this PD-linked list of terms. 
+### NSL regulon
+The KEGG and reactome term enrichments for the NSL regulon was also compared to this PD-linked list of terms. 
 ```{r}
 # Filter for KEGG and REACTOME terms
 uk_3regs_KGRE <- uk_3regs_gprof %>%
@@ -1280,7 +1313,7 @@ comparison_uk_3regs_1 <- comparison_uk_3regs %>%
 # Go through by eye- no terms were comparable so list can be filtered as is
 ```
 
-The list of terms enriched for each NSL regulon was then filtered for those linked to PD by [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/).
+The list of terms enriched for each NSL regulon was then filtered for the PD-linked terms
 ```{r}
 # Filter ARACNe list for paper list
 all_terms_uk_3regs <- uk_3regs_KGRE %>% 
