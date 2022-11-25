@@ -36,6 +36,7 @@ knitr::opts_chunk$set(echo = TRUE)
 CoExp10UKBEC::initDb(mandatory = T)
 # Open ensembl
 ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+source(file.path(here::here("scripts", "CoExp_functions.R")))
 ```
 
 # 1. Gene lists of interest
@@ -76,6 +77,7 @@ PD_GWAS_ENSG <- as.character(PD_GWAS_list$Ensembl_ID)
 The number of genes in this list: **`r nrow(PD_GWAS_list)`**.
 
 # 2. Searching gene co-expression network
+## 2.1. Network structure
 The overall structure of the network was first examined. 
 ```{r}
 # Display all modules in a specified tissue/network 
@@ -103,7 +105,7 @@ corrplot(cor(Eigengenes), tl.srt = 45,
          mar = c(3, 2, 2.5, 4))
 ```
 
-## 2.1. Gene lists {.tabset}
+## 2.2. Gene set enrichment analysis {.tabset}
 ### NSL genes
 First, the **NSL genes** were searched in the coexpression network. 
 ```{r, results = FALSE, warning = FALSE}
@@ -205,60 +207,15 @@ ggplot(NSL_fig_UK, aes(Gene, Module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
   scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,3.6)) +
-  labs(y = "Module")
+  labs(y = "Module") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
 The NSL genes appear in modules **`r NSL_UK_modules`** but were only significantly enriched in the **black** module. The eigengenes plot showed modules **black** and **darkgreen** to be relatively close together, as well as modules **royalblue**, **salmon** and **magenta**, suggesting the genes within these two groups of modules may have some level of coexpression. 
-```{r}
-# Obtain gprofiler2 network annotations from the UKBEC package
-e2 = read.csv(file.path(here::here("data", "CoExp_source", "netFCTX.12.signed.it.20.rds_cor_pca.rds_gprofiler.csv")), 
-             stringsAsFactors = FALSE)
-# Extract all GO term enrichments from source file for modules of interest
-NSL_UK_BP = e2[e2$query.number %in% NSL_UK_modules & e2$domain == "BP",]
-NSL_UK_MF = e2[e2$query.number %in% NSL_UK_modules & e2$domain == "MF",]
-NSL_UK_CC = e2[e2$query.number %in% NSL_UK_modules & e2$domain == "CC",]
-NSL_UK_BP_2 <- dplyr::select(NSL_UK_BP, query.number, term.id, term.name, domain, p.value)
-NSL_UK_MF_2 <- dplyr::select(NSL_UK_MF, query.number, term.id, term.name, domain, p.value)
-NSL_UK_CC_2 <- dplyr::select(NSL_UK_CC, query.number, term.id, term.name, domain, p.value)
-#NSL_terms <- dplyr::bind_rows(NSL_BP_2, NSL_MF_2, NSL_CC_2)
-# Rename columns
-names(NSL_UK_BP_2)[names(NSL_UK_BP_2)=="query.number"] <- "gene_list"
-names(NSL_UK_BP_2)[names(NSL_UK_BP_2)=="term.id"] <- "go_id"
-names(NSL_UK_BP_2)[names(NSL_UK_BP_2)=="domain"] <- "go_type"
-names(NSL_UK_BP_2)[names(NSL_UK_BP_2)=="term.name"] <- "go_term"
-names(NSL_UK_MF_2)[names(NSL_UK_MF_2)=="query.number"] <- "gene_list"
-names(NSL_UK_MF_2)[names(NSL_UK_MF_2)=="term.id"] <- "go_id"
-names(NSL_UK_MF_2)[names(NSL_UK_MF_2)=="domain"] <- "go_type"
-names(NSL_UK_MF_2)[names(NSL_UK_MF_2)=="term.name"] <- "go_term"
-names(NSL_UK_CC_2)[names(NSL_UK_CC_2)=="query.number"] <- "gene_list"
-names(NSL_UK_CC_2)[names(NSL_UK_CC_2)=="term.id"] <- "go_id"
-names(NSL_UK_CC_2)[names(NSL_UK_CC_2)=="domain"] <- "go_type"
-names(NSL_UK_CC_2)[names(NSL_UK_CC_2)=="term.name"] <- "go_term"
-# FDR correct p values
-NSL_UK_BP_2$p.value <- as.numeric(NSL_UK_BP_2$p.value)
-NSL_UK_BP_2$FDR <- p.adjust(NSL_UK_BP_2$p.value, method="fdr")
-NSL_UK_MF_2$p.value <- as.numeric(NSL_UK_MF_2$p.value)
-NSL_UK_MF_2$FDR <- p.adjust(NSL_UK_MF_2$p.value, method="fdr")
-NSL_UK_CC_2$p.value <- as.numeric(NSL_UK_CC_2$p.value)
-NSL_UK_CC_2$FDR <- p.adjust(NSL_UK_CC_2$p.value, method="fdr")
-```
-
-```{r, results = FALSE, warning = FALSE, message = FALSE}
-# GO reduce
-NSL_UK_BP_GO <- go_reduce(pathway_df = NSL_UK_BP_2, threshold = 0.7, scores = NULL)
-NSL_UK_MF_GO <- go_reduce(pathway_df = NSL_UK_MF_2, threshold = 0.7, scores = NULL)
-NSL_UK_CC_GO <- go_reduce(pathway_df = NSL_UK_CC_2, threshold = 0.7, scores = NULL)
-```
-
-The GO term enrichments attached to these modules were extracted and simplified according to parent terms, then plotted.
-```{r, warning = FALSE}
-#  GO plot for biological processes
-go_plot(NSL_UK_BP_GO, col_gene_list = "gene_list", col_fdr = "FDR", fct_gene_list = NSL_UK_modules)
-#  GO plot for molecular functions
-go_plot(NSL_UK_MF_GO, col_gene_list = "gene_list", col_fdr = "FDR", fct_gene_list = NSL_UK_modules)
-#  GO plot for cellular components
-go_plot(NSL_UK_CC_GO, col_gene_list = "gene_list", col_fdr = "FDR", fct_gene_list = NSL_UK_modules)
-``` 
 
 ### PD mendelian genes 
 Then the PD mendelian list was searched and the results filtered for the NSL enriched modules.
@@ -402,6 +359,54 @@ PD_GWAS_NSL_mod_UK <- PD_GWAS_rep2_UK %>%
 # Print report without GO term and PD genes column
 PD_GWAS_NSL_mod_UK[, c(-6, -7, -8)]
 ```
+
+### Gene ontology terms
+To examine the functional characteristics of these modules, the GO term enrichments annotated to these modules were extracted and simplified according to parent terms.
+```{r}
+# Obtain gprofiler2 network annotations from the UKBEC package
+e2 = read.csv(file.path(here::here("data", "CoExp_source", "netFCTX.12.signed.it.20.rds_cor_pca.rds_gprofiler.csv")),
+              stringsAsFactors = FALSE)
+# Extract all GO term enrichments from source file for modules of interest
+NSL_UK_GO = e2[e2$query.number %in% NSL_UK_modules & e2$domain %in% c("BP", "CC", "MF"),]
+NSL_UK_GO_2 <- dplyr::select(NSL_UK_GO, query.number, term.id, term.name, domain, p.value)
+# Rename columns
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="query.number"] <- "gene_list"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="term.id"] <- "go_id"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="domain"] <- "go_type"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="term.name"] <- "go_term"
+# FDR correct p values
+NSL_UK_GO_2$p.value <- as.numeric(NSL_UK_GO_2$p.value)
+NSL_UK_GO_2$FDR <- p.adjust(NSL_UK_GO_2$p.value, method="fdr")
+```
+
+```{r, results = FALSE, warning = FALSE, message = FALSE}
+# GO reduce
+NSL_UK_GO_red <- go_reduce(pathway_df = NSL_UK_GO_2, threshold = 0.7, scores = NULL)
+```
+
+The GO term enrichments attached to these modules were extracted and simplified according to parent terms, then plotted.
+```{r, warning = FALSE}
+# Format
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="BP"] <- "GO: BP"
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="MF"] <- "GO: MF"
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="CC"] <- "GO: CC"
+NSL_UK_GO_red <- NSL_UK_GO_red %>%
+  tidyr::drop_na(parent_term) %>%
+  dplyr::arrange(desc(FDR))
+# Plot
+ggplot2::ggplot(NSL_UK_GO_red, aes(x = gene_list, y = parent_term)) + 
+  geom_point(size = 2, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4", limits = c(0,16.8)) +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Module", y = "") +
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6),
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm")
+    )
+``` 
 
 ## 2.2. Summary
 The **frequency** of **genes** within each gene **list** apppearing in each of the **`r length(NSL_UK_modules)` NSL enriched modules** was calculated. 

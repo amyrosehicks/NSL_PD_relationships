@@ -118,7 +118,8 @@ Some information from the primary gene co-expression network was compared to res
 ```{r, results = FALSE, warning = FALSE}
 # Load enrichments from primary network
 ukbec_net <- readRDS(file.path(here::here("data", "CoExp_source", "netFCTX.12.signed.it.20.rds_cor_pca.rds")))
-ukbec_enrich <- as.data.frame(getModulesEnrichment(ukbec_net, markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+ukbec_enrich <- as.data.frame(getModulesEnrichment(ukbec_net, 
+                                                   markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
 # Search NSL genes in primary network
 NSL_report_uk <- reportOnGenes(tissue = "FCTX", genes = NSL_ENSG, which.one = "10UKBEC")
 NSL_rep_uk <- NSL_report_uk$report 
@@ -430,7 +431,8 @@ ggplot(MA_NSL_mod, aes(Gene, Module)) +
 The number of genes in the output table was **`r nrow(MA_NSL_mod)`**, indicating there were **`r length(NSL_ENSG) - nrow(MA_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(MA_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
 ```{r, results = FALSE}
 # Load cell type markers enriched for each module
-MA_mod_enrich <- as.data.frame(getModulesEnrichment(MA_net, markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+MA_mod_enrich <- as.data.frame(getModulesEnrichment(MA_net, 
+                                                    markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
 # Filter enrichments for NSL modules
 MA_mod_enrich_NSL <- dplyr::select(MA_mod_enrich, one_of(MA_NSL_modules))
 ```
@@ -647,7 +649,8 @@ ggplot(MG_NSL_mod, aes(Gene, Module)) +
 The number of genes in the output table was **`r nrow(MG_NSL_mod)`**, indicating there were **`r length(NSL_ENSG) - nrow(MG_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(MG_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
 ```{r, results = FALSE}
 # Load cell type markers enriched for each module
-MG_mod_enrich <- as.data.frame(getModulesEnrichment(MG_net, markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+MG_mod_enrich <- as.data.frame(getModulesEnrichment(MG_net, 
+                                                    markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
 # Filter enrichments for NSL modules
 MG_mod_enrich_NSL <- dplyr::select(MG_mod_enrich, one_of(MG_NSL_modules))
 ```
@@ -864,7 +867,8 @@ ggplot(OLG_NSL_mod, aes(Gene, Module)) +
 The number of genes in the output table was **`r nrow(OLG_NSL_mod)`**, indicating there were **`r length(NSL_ENSG) - nrow(OLG_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(OLG_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
 ```{r, results = FALSE}
 # Load cell type markers enriched for each module
-OLG_mod_enrich <- as.data.frame(getModulesEnrichment(OLG_net, markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+OLG_mod_enrich <- as.data.frame(getModulesEnrichment(OLG_net, 
+                                                     markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
 # Filter enrichments for NSL modules
 OLG_mod_enrich_NSL <- dplyr::select(OLG_mod_enrich, one_of(OLG_NSL_modules))
 ```
@@ -1010,32 +1014,40 @@ NSL_fig <- dplyr::select(NSL_fig, Gene, Module, FDR, `-log10(FDR)`, Network)
 ggplot(NSL_fig, aes(Gene, Module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR)), size = 2) +
-  scale_fill_gradient(low = "white", high = "goldenrod3") +
-  labs(y = "Module") +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,3.6)) +
+  labs(y = "Module", size = 4) +
   facet_grid(factor(Network, 
-                    levels = c("Neuron-corrected", "Astrocyte-corrected", "Microglia-corrected", "Oligodendrocyte-corrected")) ~ ., 
+                    levels = c("Neuron-corrected", 
+                               "Astrocyte-corrected", 
+                               "Microglia-corrected", 
+                               "Oligodendrocyte-corrected")) ~ ., 
              scales = "free", space = "free") +
-  theme(strip.text.y = element_text(angle = 90, size = 6), axis.text = element_text(size = 6))
+  theme(strip.text.y = element_text(angle = 90, size = 6), 
+        axis.text = element_text(size = 6), 
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        legend.key.size = unit(4, "mm"))
 ```
 
 Each of the cell type corrections succeeded in increasing the number of cell type enrichments associated with GCN modules and the genes therein. These results were thus collated together to evaluate the cell type specific activity of the **NSL genes**.
 ```{r}
-# Format cell type enrichment tables
-N_mod_enrich_fig <- dplyr::filter_all(N_mod_enrich_NSL, any_vars(.<0.05))
-N_mod_enrich_fig <- as.data.frame(t(N_mod_enrich_fig))
-N_mod_enrich_fig <- rownames_to_column(N_mod_enrich_fig, var = "Module")
-MA_mod_enrich_fig <- dplyr::filter_all(MA_mod_enrich_NSL, any_vars(.<0.05))
-MA_mod_enrich_fig <- as.data.frame(t(MA_mod_enrich_fig))
-MA_mod_enrich_fig <- rownames_to_column(MA_mod_enrich_fig, var = "Module")
-MG_mod_enrich_fig <- dplyr::filter_all(MG_mod_enrich_NSL, any_vars(.<0.05))
-MG_mod_enrich_fig <- as.data.frame(t(MG_mod_enrich_fig))
-MG_mod_enrich_fig <- rownames_to_column(MG_mod_enrich_fig, var = "Module")
-OLG_mod_enrich_fig <- dplyr::filter_all(OLG_mod_enrich_NSL, any_vars(.<0.05))
-OLG_mod_enrich_fig <- as.data.frame(t(OLG_mod_enrich_fig))
-OLG_mod_enrich_fig <- rownames_to_column(OLG_mod_enrich_fig, var = "Module")
-ukbec_enrich_fig <- dplyr::filter_all(ukbec_enrich_NSL, any_vars(.<0.05)) 
-ukbec_enrich_fig <- as.data.frame(t(ukbec_enrich_fig))
-ukbec_enrich_fig <- rownames_to_column(ukbec_enrich_fig, var = "Module")
+# Format cell type enrichment tables (N not included as no cell type enrichments in NSL modules)
+MA_mod_enrich_fig <- MA_mod_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05))
+MA_mod_enrich_fig <- as.data.frame(t(MA_mod_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+MG_mod_enrich_fig <- MG_mod_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05))
+MG_mod_enrich_fig <- as.data.frame(t(MG_mod_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+OLG_mod_enrich_fig <- OLG_mod_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05))
+OLG_mod_enrich_fig <- as.data.frame(t(OLG_mod_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+ukbec_enrich_fig <- ukbec_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05)) 
+ukbec_enrich_fig <- as.data.frame(t(ukbec_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
 # Format NSL gene enrichment tables
 N_NSL_fig <- dplyr::select(N_NSL_mod, Gene, Module)
 N_NSL_fig$Network <- "Neuron-corrected"
@@ -1052,16 +1064,23 @@ ukbec_NSL_fig$Network <- "None"
 # Only one enrichment so can't join together
 OLG_NSL_figure <- dplyr::full_join(OLG_mod_enrich_fig, OLG_NSL_fig, by = "Module")
 OLG_NSL_figure <- dplyr::filter_all(OLG_NSL_figure, any_vars(.<1))
-# Reformat
+# Reformat and add -log10 values
 OLG_NSL_figure$`-log10(p.value)` <- -log10(OLG_NSL_figure$Neuron_Neuron.Ex1)
 OLG_NSL_figure$`-log10(p.value)` <- as.numeric(OLG_NSL_figure$`-log10(p.value)`)
 names(OLG_NSL_figure)[names(OLG_NSL_figure)=="Neuron_Neuron.Ex1"] <- "Enrichment"
 OLG_NSL_figure$Cell_type <- "Neuron_Neuron.Ex1"
+# Round pvalue just for presentation purposes
+OLG_NSL_figure$`-log10(p.value)` <- signif(OLG_NSL_figure$`-log10(p.value)`, digits = 3)
 # Produce plot
 ggplot(OLG_NSL_figure, aes(Gene, Cell_type)) +
   geom_tile(aes(fill = `-log10(p.value)`)) +
   geom_text(aes(label = signif.num2(Enrichment)), size = 3) +
-  scale_fill_gradient(low = "white", high = "goldenrod3") +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,1.5)) +
   labs(y = "Cell type") +
-  theme(axis.text = element_text(size = 6))
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6), 
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
