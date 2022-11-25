@@ -49,7 +49,10 @@ NSL_genes <- as.character(NSL_list$Gene_symbol)
 ### Amygdala
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Amygdala_report_gt <- reportOnGenes(tissue = "Amygdala", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Amygdala_report_gt <- reportOnGenes(tissue = "Amygdala", 
+                                    genes = NSL_genes, 
+                                    which.one = "gtexv6", 
+                                    ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Amygdala_rep_gt <- Amygdala_report_gt$report
 Amygdala_rep_gt_length <- nrow(Amygdala_rep_gt)
 # Convert report into table
@@ -82,18 +85,21 @@ Amygdala_gt_fig$`-log10(p.val)` <- -log10(Amygdala_gt_fig$p.val)
 Amygdala_gt_fig$FDR <- p.adjust(Amygdala_gt_fig$p.val, method = "fdr")
 Amygdala_gt_fig$`-log10(FDR)` <- -log10(Amygdala_gt_fig$FDR)
 # Create graph
-source("~/NSL_PD_relationships/scripts/CoExp_functions.R")
+source(file.path(here::here("scripts", "CoExp_functions.R")))
 ggplot(Amygdala_gt_fig, aes(gene, reorder(module, position))) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
   scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,5)) +
-  labs(title = "Amygdala", y = "Module", x = "Gene")
+  labs(title = "Amygdala", y = "Module", x = "Gene") 
 ```
 
 ### Anterior Cingulate Cortex
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-AntCingCortex_report_gt <- reportOnGenes(tissue = "AntCingCortex", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+AntCingCortex_report_gt <- reportOnGenes(tissue = "AntCingCortex", 
+                                         genes = NSL_genes, 
+                                         which.one = "gtexv6", 
+                                         ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 AntCingCortex_rep_gt <- AntCingCortex_report_gt$report
 AntCingCortex_rep_gt_length <- nrow(AntCingCortex_rep_gt)
 # Convert report into table
@@ -222,7 +228,10 @@ ggplot(Cerebellum_gt_fig, aes(gene, reorder(module, position))) +
 ### Cerebellar Hemisphere
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-CerebHemisphere_report_gt <- reportOnGenes(tissue = "CerebHemisphere", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+CerebHemisphere_report_gt <- reportOnGenes(tissue = "CerebHemisphere", 
+                                           genes = NSL_genes, 
+                                           which.one = "gtexv6", 
+                                           ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 CerebHemisphere_rep_gt <- CerebHemisphere_report_gt$report
 CerebHemisphere_rep_gt_length <- nrow(CerebHemisphere_rep_gt)
 # Convert report into table
@@ -265,7 +274,10 @@ ggplot(CerebHemisphere_gt_fig, aes(gene, reorder(module, position))) +
 ### Cortex
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Cortex_report_gt <- reportOnGenes(tissue = "Cortex", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Cortex_report_gt <- reportOnGenes(tissue = "Cortex", 
+                                  genes = NSL_genes, 
+                                  which.one = "gtexv6", 
+                                  ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Cortex_rep_gt <- Cortex_report_gt$report
 Cortex_rep_gt_length <- nrow(Cortex_rep_gt)
 # Convert report into table
@@ -308,7 +320,10 @@ ggplot(Cortex_gt_fig, aes(gene, reorder(module, position))) +
 ### Frontal Cortex
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-FCortex_report_gt <- reportOnGenes(tissue = "FCortex", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+FCortex_report_gt <- reportOnGenes(tissue = "FCortex", 
+                                   genes = NSL_genes, 
+                                   which.one = "gtexv6", 
+                                   ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 FCortex_rep_gt <- FCortex_report_gt$report
 FCortex_rep_gt_length <- nrow(FCortex_rep_gt)
 # Convert report into table
@@ -351,7 +366,10 @@ ggplot(FCortex_gt_fig, aes(gene, reorder(module, position))) +
 ### Hippocampus
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Hippocampus_report_gt <- reportOnGenes(tissue = "Hippocampus", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Hippocampus_report_gt <- reportOnGenes(tissue = "Hippocampus", 
+                                       genes = NSL_genes, 
+                                       which.one = "gtexv6", 
+                                       ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Hippocampus_rep_gt <- Hippocampus_report_gt$report
 Hippocampus_rep_gt_length <- nrow(Hippocampus_rep_gt)
 # Convert report into table
@@ -394,7 +412,10 @@ ggplot(Hippocampus_gt_fig, aes(gene, reorder(module, position))) +
 ### Hypothalamus
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Hypothalamus_report_gt <- reportOnGenes(tissue = "Hypothalamus", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Hypothalamus_report_gt <- reportOnGenes(tissue = "Hypothalamus", 
+                                        genes = NSL_genes, 
+                                        which.one = "gtexv6", 
+                                        ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Hypothalamus_rep_gt <- Hypothalamus_report_gt$report
 Hypothalamus_rep_gt_length <- nrow(Hypothalamus_rep_gt)
 # Convert report into table
@@ -437,7 +458,10 @@ ggplot(Hypothalamus_gt_fig, aes(gene, reorder(module, position))) +
 ### Nucleus Accumbens
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-NucAccumbens_report_gt <- reportOnGenes(tissue = "NucAccumbens", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+NucAccumbens_report_gt <- reportOnGenes(tissue = "NucAccumbens", 
+                                        genes = NSL_genes, 
+                                        which.one = "gtexv6", 
+                                        ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 NucAccumbens_rep_gt <- NucAccumbens_report_gt$report
 NucAccumbens_rep_gt_length <- nrow(NucAccumbens_rep_gt)
 # Convert report into table
@@ -480,7 +504,10 @@ ggplot(NucAccumbens_gt_fig, aes(gene, reorder(module, position))) +
 ### Putamen
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Putamen_report_gt <- reportOnGenes(tissue = "Putamen", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Putamen_report_gt <- reportOnGenes(tissue = "Putamen", 
+                                   genes = NSL_genes, 
+                                   which.one = "gtexv6", 
+                                   ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Putamen_rep_gt <- Putamen_report_gt$report
 Putamen_rep_gt_length <- nrow(Putamen_rep_gt)
 # Convert report into table
@@ -523,7 +550,10 @@ ggplot(Putamen_gt_fig, aes(gene, reorder(module, position))) +
 ### Spinal cord
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Spinalcord_report_gt <- reportOnGenes(tissue = "Spinalcord", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Spinalcord_report_gt <- reportOnGenes(tissue = "Spinalcord", 
+                                      genes = NSL_genes, 
+                                      which.one = "gtexv6", 
+                                      ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Spinalcord_rep_gt <- Spinalcord_report_gt$report
 Spinalcord_rep_gt_length <- nrow(Spinalcord_rep_gt)
 # Convert report into table
@@ -566,7 +596,10 @@ ggplot(Spinalcord_gt_fig, aes(gene, reorder(module, position))) +
 ### Substantia Nigra
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-Substantianigra_report_gt <- reportOnGenes(tissue = "Substantianigra", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+Substantianigra_report_gt <- reportOnGenes(tissue = "Substantianigra", 
+                                           genes = NSL_genes, 
+                                           which.one = "gtexv6", 
+                                           ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 Substantianigra_rep_gt <- Substantianigra_report_gt$report
 Substantianigra_rep_gt_length <- nrow(Substantianigra_rep_gt)
 # Convert report into table
@@ -622,10 +655,13 @@ NucAccumbens_gt_fig$Tissue <- "Nucleus Accumbens"
 Putamen_gt_fig$Tissue <- "Putamen"
 Spinalcord_gt_fig$Tissue <- "Spinal Cord"
 Substantianigra_gt_fig$Tissue <- "Substantia Nigra"
-sumfig <- do.call(rbind, list(Amygdala_gt_fig, AntCingCortex_gt_fig, Caudate_gt_fig, Cerebellum_gt_fig, CerebHemisphere_gt_fig,
-                              Cortex_gt_fig, FCortex_gt_fig, Hippocampus_gt_fig, Hypothalamus_gt_fig, NucAccumbens_gt_fig,
-                              Putamen_gt_fig, Spinalcord_gt_fig, Substantianigra_gt_fig))
-
+sumfig <- do.call(rbind, list(Amygdala_gt_fig, AntCingCortex_gt_fig, 
+                              Caudate_gt_fig, Cerebellum_gt_fig, 
+                              CerebHemisphere_gt_fig,
+                              Cortex_gt_fig, FCortex_gt_fig, 
+                              Hippocampus_gt_fig, Hypothalamus_gt_fig, 
+                              NucAccumbens_gt_fig, Putamen_gt_fig, 
+                              Spinalcord_gt_fig, Substantianigra_gt_fig))
 # Format columns
 sumfig$gene <- as.character(sumfig$gene)
 sumfig$`-log10(FDR)` <- as.numeric(sumfig$`-log10(FDR)`)
@@ -635,10 +671,15 @@ sumfig$Position <- nrow(sumfig):1
 ggplot(sumfig, aes(gene, module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR)), size = 2) +
-  scale_fill_gradient(low = "white", high = "goldenrod3") +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,4.1)) +
   labs(y = "Module", x = "Gene") +
   facet_grid(Tissue ~ ., scales = "free", space = "free") +
-  theme(strip.text.y = element_text(angle = 0), axis.text = element_text(size = 6))
+  theme(
+    strip.text.y = element_text(angle = 0, size = 7), 
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
 # 3. UKBEC

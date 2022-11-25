@@ -72,6 +72,7 @@ PD_GWAS_genes <- as.character(PD_GWAS_list$Gene_symbol)
 The number of genes in this list: **`r nrow(PD_GWAS_list)`**.
 
 # 2. Searching gene co-expression network
+## 2.1. Network structure
 The overall structure of the network was first examined. 
 ```{r}
 # Display all modules in a specified tissue/network 
@@ -99,12 +100,15 @@ corrplot(cor(Eigengenes), tl.srt = 45,
          mar = c(3, 2, 2.5, 4))
 ```
 
-## 2.1. Gene lists {.tabset}
+## 2.2. Gene set enrichment analysis {.tabset}
 ### NSL genes
 First, the **NSL genes** were searched in the coexpression network. 
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network, including previously investigated KANSL1 ens.correction
-NSL_report_gt <- reportOnGenes(tissue = "FCortex", genes = NSL_genes, which.one = "gtexv6", ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+NSL_report_gt <- reportOnGenes(tissue = "FCortex", 
+                               genes = NSL_genes, 
+                               which.one = "gtexv6", 
+                               ens.correction = c("ENSG00000257382", "ENSG00000120071"))
 # Select report
 NSL_rep_gt <- NSL_report_gt$report 
 ```
@@ -155,59 +159,15 @@ ggplot(NSL_fig_gt, aes(Gene, Module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
   scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.4)) +
-  labs(y = "Module")
-```
-
-```{r}
-# Obtain gprofiler2 annotations from the CoExpGTEx frontal cortex source files
-e = read.csv(file.path(here::here("data", "CoExp_source", "netFCortex.9.it.50.rds_gprof.csv")), 
-             stringsAsFactors = FALSE)
-# Extract all GO term enrichments from source file for modules of interest
-NSL_BP = e[e$query.number %in% NSL_gt_modules & e$domain == "BP",]
-NSL_MF = e[e$query.number %in% NSL_gt_modules & e$domain == "MF",]
-NSL_CC = e[e$query.number %in% NSL_gt_modules & e$domain == "CC",]
-NSL_BP_2 <- dplyr::select(NSL_BP, query.number, term.id, term.name, domain, p.value)
-NSL_MF_2 <- dplyr::select(NSL_MF, query.number, term.id, term.name, domain, p.value)
-NSL_CC_2 <- dplyr::select(NSL_CC, query.number, term.id, term.name, domain, p.value)
-# Rename columns
-names(NSL_BP_2)[names(NSL_BP_2)=="query.number"] <- "gene_list"
-names(NSL_BP_2)[names(NSL_BP_2)=="term.id"] <- "go_id"
-names(NSL_BP_2)[names(NSL_BP_2)=="domain"] <- "go_type"
-names(NSL_BP_2)[names(NSL_BP_2)=="term.name"] <- "go_term"
-names(NSL_MF_2)[names(NSL_MF_2)=="query.number"] <- "gene_list"
-names(NSL_MF_2)[names(NSL_MF_2)=="term.id"] <- "go_id"
-names(NSL_MF_2)[names(NSL_MF_2)=="domain"] <- "go_type"
-names(NSL_MF_2)[names(NSL_MF_2)=="term.name"] <- "go_term"
-names(NSL_CC_2)[names(NSL_CC_2)=="query.number"] <- "gene_list"
-names(NSL_CC_2)[names(NSL_CC_2)=="term.id"] <- "go_id"
-names(NSL_CC_2)[names(NSL_CC_2)=="domain"] <- "go_type"
-names(NSL_CC_2)[names(NSL_CC_2)=="term.name"] <- "go_term"
-# FDR correct p values
-NSL_BP_2$p.value <- as.numeric(NSL_BP_2$p.value)
-NSL_BP_2$FDR <- p.adjust(NSL_BP_2$p.value, method="fdr")
-NSL_MF_2$p.value <- as.numeric(NSL_MF_2$p.value)
-NSL_MF_2$FDR <- p.adjust(NSL_MF_2$p.value, method="fdr")
-NSL_CC_2$p.value <- as.numeric(NSL_CC_2$p.value)
-NSL_CC_2$FDR <- p.adjust(NSL_CC_2$p.value, method="fdr")
+  labs(y = "Module") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
 
 The NSL genes appeared in modules **`r NSL_gt_modules`** in this GCN but were only significantly enriched in the **red** module. The eigengenes plot shows modules **darkred** and **red** to be relatively close together, as well as modules **greenyellow** and **grey60**, suggesting the genes within these pairs of modules may have some level of coexpression. 
-```{r, warning = FALSE, results = FALSE, message = FALSE}
-# GO reduce all terms to parent terms
-NSL_BP_GO <- go_reduce(pathway_df = NSL_BP_2, threshold = 0.7, scores = NULL)
-NSL_MF_GO <- go_reduce(pathway_df = NSL_MF_2, threshold = 0.7, scores = NULL)
-NSL_CC_GO <- go_reduce(pathway_df = NSL_CC_2, threshold = 0.7, scores = NULL)
-```
-
-The GO term enrichments annotated to these modules were extracted and simplified according to parent terms, then plotted.
-```{r, warning = FALSE}
-# GO plot for biological processes
-go_plot(NSL_BP_GO, col_gene_list = "gene_list", col_fdr = "FDR", fct_gene_list = NSL_gt_modules)
-# GO plot for molecular functions
-go_plot(NSL_MF_GO, col_gene_list = "gene_list", col_fdr = "FDR", fct_gene_list = NSL_gt_modules)
-# GO plot for cellular components
-go_plot(NSL_CC_GO, col_gene_list = "gene_list", col_fdr = "FDR", fct_gene_list = NSL_gt_modules)
-```
 
 ### PD mendelian genes
 Then the PD mendelian list was searched and the results filtered for the NSL enriched modules.
@@ -250,7 +210,11 @@ fromGeneName2Ensembl("MAPT")
 The remaining gene did not appear in the source files under any ENSG from ensembl, thus it was assumed this gene **does not appear in this dataset**. The search can was then repeated with the most complete gene list possible.
 ```{r, results = FALSE, warning = FALSE}
 # Again search genes of interest in specified tissue/network 
-PD_mendelian_report2_gt <- reportOnGenes(tissue = "FCortex", genes = PD_mendelian_gt_genes, which.one = "gtexv6", ens.correction = c("ENSG00000262446", "ENSG00000177628", "ENSG00000257437", "ENSG00000186868"))
+PD_mendelian_report2_gt <- reportOnGenes(tissue = "FCortex", 
+                                         genes = PD_mendelian_gt_genes, 
+                                         which.one = "gtexv6", 
+                                         ens.correction = c("ENSG00000262446", "ENSG00000177628",
+                                                            "ENSG00000257437", "ENSG00000186868"))
 # Select report
 PD_mendelian_rep2_gt <- PD_mendelian_report2_gt$report 
 # Count number of genes in output
@@ -260,7 +224,9 @@ PD_mendelian_rep2_gt_length <- nrow(PD_mendelian_rep2_gt)
 The number of genes in the final search output was **`r PD_mendelian_rep2_gt_length`**, showing there was **`r nrow(PD_mendelian_list) - PD_mendelian_rep2_gt_length`** fewer gene than the original input list.
 ```{r}
 # Convert report into dataframe
-PD_mendelian_rep2_gt <- data.frame(matrix(unlist(PD_mendelian_rep2_gt), nrow = PD_mendelian_rep2_gt_length, byrow = FALSE), stringsAsFactors=FALSE)
+PD_mendelian_rep2_gt <- data.frame(matrix(unlist(PD_mendelian_rep2_gt), 
+                                          nrow = PD_mendelian_rep2_gt_length, 
+                                          byrow = FALSE), stringsAsFactors=FALSE)
 names(PD_mendelian_rep2_gt)[1] <- "Gene"
 names(PD_mendelian_rep2_gt)[2] <- "ENSG"
 names(PD_mendelian_rep2_gt)[3] <- "MM"
@@ -338,7 +304,16 @@ PD_GWAS_gt_genes[PD_GWAS_gt_genes=="ZSCAN16-AS1"] <- "RP1-265C24.9"
 One of the above genes, *ZSCAN16-AS1*, could not be identified through the method of searching `fromGeneName2Ensembl`, but the ENSG was found instead using `fromEnsembl2GeneName` to be assigned to the gene name *RP1-265C24.9*, so this was replaced in the input list. The remaining genes did not appear in the source files under any ENSG from ensembl, thus it was assumed these genes **do not appear in this dataset**. A quick check on [GTEx](https://gtexportal.org/home/) itself for these genes displayed very low levels in the frontal cortex. The search was then repeated with the most complete gene list possible.
 ```{r, results = FALSE, warning = FALSE}
 # Again search genes of interest in specified tissue/network 
-PD_GWAS_report2_gt <- reportOnGenes(tissue = "FCortex", genes = PD_GWAS_gt_genes, which.one = "gtexv6", ens.correction = c("ENSG00000263031", "ENSG00000145723", "ENSG00000233209", "ENSG00000179344", "ENSG00000228987", "ENSG00000204287", "ENSG00000257437", "ENSG00000186868", "ENSG00000262234", "ENSG00000145725",  "ENSG00000255439", "ENSG00000167397", "ENSG00000232748", "ENSG00000167394"))
+PD_GWAS_report2_gt <- reportOnGenes(tissue = "FCortex", 
+                                    genes = PD_GWAS_gt_genes, 
+                                    which.one = "gtexv6", 
+                                    ens.correction = c("ENSG00000263031", "ENSG00000145723",
+                                                       "ENSG00000233209", "ENSG00000179344",
+                                                       "ENSG00000228987", "ENSG00000204287",
+                                                       "ENSG00000257437", "ENSG00000186868",
+                                                       "ENSG00000262234", "ENSG00000145725", 
+                                                       "ENSG00000255439", "ENSG00000167397",
+                                                       "ENSG00000232748", "ENSG00000167394"))
 # Select report
 PD_GWAS_rep2_gt <- PD_GWAS_report2_gt$report 
 # Count number of genes in output
@@ -348,7 +323,10 @@ PD_GWAS_rep2_gt_length <- nrow(PD_GWAS_rep2_gt)
 The number of genes in the final search output was **`r PD_GWAS_rep2_gt_length`**, showing there were **`r nrow(PD_GWAS_list) - PD_GWAS_rep2_gt_length`** fewer genes than the original input list.
 ```{r}
 # Convert report into dataframe
-PD_GWAS_rep2_gt <- data.frame(matrix(unlist(PD_GWAS_rep2_gt), nrow = PD_GWAS_rep2_gt_length, byrow = FALSE), stringsAsFactors=FALSE)
+PD_GWAS_rep2_gt <- data.frame(matrix(unlist(PD_GWAS_rep2_gt), 
+                                     nrow = PD_GWAS_rep2_gt_length, 
+                                     byrow = FALSE), 
+                              stringsAsFactors=FALSE)
 names(PD_GWAS_rep2_gt)[1] <- "Gene"
 names(PD_GWAS_rep2_gt)[2] <- "ENSG"
 names(PD_GWAS_rep2_gt)[3] <- "MM"
@@ -369,6 +347,53 @@ PD_GWAS_NSL_mod_gt <- PD_GWAS_rep2_gt %>%
   filter(Module %in% NSL_gt_modules)
 # Print report without GO term and PD genes column
 PD_GWAS_NSL_mod_gt[, c(-6, -7, -8)]
+```
+
+### Gene ontology terms
+To examine the functional characteristics of these modules, the GO term enrichments annotated to these modules were extracted and simplified according to parent terms.
+```{r}
+# Obtain gprofiler2 annotations from the CoExpGTEx frontal cortex source files
+e = read.csv(file.path(here::here("data", "CoExp_source", "netFCortex.9.it.50.rds_gprof.csv")), 
+             stringsAsFactors = FALSE)
+# Extract all GO term enrichments from source file for modules of interest
+NSL_GO = e[e$query.number %in% NSL_gt_modules & e$domain %in% c("BP", "CC", "MF"),]
+NSL_GO_2 <- dplyr::select(NSL_GO, query.number, term.id, term.name, domain, p.value)
+# Rename columns
+names(NSL_GO_2)[names(NSL_GO_2)=="query.number"] <- "gene_list"
+names(NSL_GO_2)[names(NSL_GO_2)=="term.id"] <- "go_id"
+names(NSL_GO_2)[names(NSL_GO_2)=="domain"] <- "go_type"
+names(NSL_GO_2)[names(NSL_GO_2)=="term.name"] <- "go_term"
+# FDR correct p values
+NSL_GO_2$p.value <- as.numeric(NSL_GO_2$p.value)
+NSL_GO_2$FDR <- p.adjust(NSL_GO_2$p.value, method="fdr")
+```
+
+```{r, warning = FALSE, results = FALSE, message = FALSE}
+# GO reduce all terms to parent terms
+NSL_GO_red <- go_reduce(pathway_df = NSL_GO_2, threshold = 0.7, scores = NULL)
+```
+
+```{r, warning = FALSE}
+# Format
+NSL_GO_red$go_type[NSL_GO_red$go_type=="BP"] <- "GO: BP"
+NSL_GO_red$go_type[NSL_GO_red$go_type=="MF"] <- "GO: MF"
+NSL_GO_red$go_type[NSL_GO_red$go_type=="CC"] <- "GO: CC"
+NSL_GO_red <- NSL_GO_red %>%
+  tidyr::drop_na(parent_term) %>%
+  dplyr::arrange(desc(FDR))
+# Plot
+ggplot2::ggplot(NSL_GO_red, aes(x = gene_list, y = parent_term)) + 
+  geom_point(size = 2, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4", limits = c(0,58)) +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Module", y = "") +
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6),
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm")
+    )
 ```
 
 ## 2.2. Summary
@@ -425,6 +450,8 @@ melt_summ <- gt_pvals_list %>%
   dplyr::filter(Module %in% NSL_gt_modules) %>%
   dplyr::distinct()
 # Prep for figure 
+melt_summ$Gene_list[melt_summ$Gene_list=="PD_mendelian"] <- "Mendelian PD"
+melt_summ$Gene_list[melt_summ$Gene_list=="PD_GWAS"] <- "Sporadic PD"
 melt_summ$FDR <- as.numeric(melt_summ$FDR)
 melt_summ$Module <- as.character(melt_summ$Module)
 melt_summ$Gene_list <- as.character(melt_summ$Gene_list)
@@ -435,5 +462,10 @@ ggplot(melt_summ, aes(Gene_list, Module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
   scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0, 2.4)) +
-  labs(y = "Module", x = "Gene list")
+  labs(y = "Module", x = "Gene list") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
