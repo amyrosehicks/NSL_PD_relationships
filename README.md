@@ -26,7 +26,7 @@ This repository contains code for the paper found [here], which used in silico a
 </tr>
 <tr class="even">
 <td><a href="docs" class="uri">docs</a></td>
-<td>Contains all <code>.Rmd</code>s and their corresponding <code>.html</code>s describing analyses performed for this project.</a></td>
+<td>Contains all <code>.Rmd</code>s describing analyses performed for this project.</a></td>
 </tr>
 <tr class="even">
 <td><a href="scripts" class="uri">scripts</a></td>
