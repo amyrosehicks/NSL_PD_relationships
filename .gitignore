@@ -44,3 +44,5 @@ vignettes/*.pdf
 /data/MarkerGenes_source/
 
 *.pdf
+*.png
+*.html
