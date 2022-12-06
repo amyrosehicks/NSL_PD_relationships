@@ -38,6 +38,7 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 .Rproj.user
+.Rproj
 
 /data/CoExp_source/
 /data/GMSCA_source/
