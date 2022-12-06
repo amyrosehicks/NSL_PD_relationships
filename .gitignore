@@ -42,6 +42,7 @@ vignettes/*.pdf
 /data/CoExp_source/
 /data/GMSCA_source/
 /data/MarkerGenes_source/
+/data/Networks/
 
 *.pdf
 *.png
