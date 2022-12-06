@@ -410,7 +410,7 @@ for (i in PD_GWAS_list$Ensembl_ID) {
   gt_3regs_gwasPD$Target_gene[gt_3regs_gwasPD$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
 }
 # Show results
-gt_3regs_mendPD %>%
+gt_3regs_gwasPD %>%
   dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
 ```
 
@@ -1014,7 +1014,7 @@ for (i in PD_GWAS_list$Ensembl_ID) {
   uk_3regs_gwasPD$Target_gene[uk_3regs_gwasPD$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
 }
 # Show results
-uk_3regs_mendPD %>%
+uk_3regs_gwasPD %>%
   dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
 ```
 
