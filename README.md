@@ -22,7 +22,7 @@ This repository contains code for the paper found [here], which used in silico a
 <tbody>
 <tr class="odd">
 <td><a href="data" class="uri">data</a></td>
-<td>Contains all <code>.txt</code>, <code>.xlsx</code> and <code>.csv</code> raw data files used in analysis for this project, as well as <code>.rds</code> files containing secondary gene co-expression networks.</a></td>
+<td>Contains all <code>.txt</code>, <code>.xlsx</code> and <code>.csv</code> raw data files used in analysis for this project.</a></td>
 </tr>
 <tr class="even">
 <td><a href="docs" class="uri">docs</a></td>
