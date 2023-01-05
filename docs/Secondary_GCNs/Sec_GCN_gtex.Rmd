@@ -1418,6 +1418,7 @@ PD_fig <- dplyr::select(PD_fig, List, module, FDR, `-log10(FDR)`, Network)
 # Add in empty row for 'salmon4' module so it lines up with NSL figure 
 PD_fig <- rbind(PD_fig, c("zzz", "salmon4", 1, 1, "Neuron-corrected"))
 PD_fig$`-log10(FDR)` <- as.numeric(PD_fig$`-log10(FDR)`)
+PD_fig$FDR <- as.numeric(PD_fig$FDR)
 ```
 
 ```{r}
@@ -1453,25 +1454,25 @@ MG_PD_fig <- MG_PD_mod %>%
 OLG_PD_fig <- OLG_PD_mod %>%
   dplyr::select(List, module, Network) %>% 
   dplyr::rename(Module = module)
-mendelian_PA_rep$List <- "Mendelian PD"
-GWAS_MR_rep$List <- "Sporadic PD"
-prim_PD_rep <- bind_rows(mendelian_PA_rep, GWAS_MR_rep)
+PD_mendelian_rep$List <- "Mendelian PD"
+PD_GWAS_rep$List <- "Sporadic PD"
+prim_PD_rep <- bind_rows(PD_mendelian_rep, PD_GWAS_rep)
 gtex_PD_fig <- dplyr::select(prim_PD_rep, List, module)
 gtex_PD_fig$Network <- "None"
 gtex_PD_fig <- gtex_PD_fig %>% dplyr::rename(Module = module)
 # Filter cell type enrichment tables for only modules PD genes appear in
 MA_mod_enrich_PD <- MA_mod_enrich %>%
-  dplyr::select(one_of(MA_mendelian_PA_mod1$module)) %>%
+  dplyr::select(one_of(MA_PD_mendelian_mod1$module)) %>%
   dplyr::filter_all(any_vars(.<0.05)) 
 MA_mod_enrich_PD <- as.data.frame(t(MA_mod_enrich_PD)) %>%
   rownames_to_column(var = "Module")
 MG_mod_enrich_PD <- MG_mod_enrich %>%
-  dplyr::select(one_of(MG_mendelian_PA_mod1$module)) %>%
+  dplyr::select(one_of(MG_PD_mendelian_mod1$module)) %>%
   dplyr::filter_all(any_vars(.<0.05)) 
 MG_mod_enrich_PD <- as.data.frame(t(MG_mod_enrich_PD)) %>%
   rownames_to_column(var = "Module")
 OLG_mod_enrich_PD <- OLG_mod_enrich %>%
-  dplyr::select(one_of(OLG_mendelian_PA_mod1$module)) %>%
+  dplyr::select(one_of(OLG_PD_mendelian_mod1$module)) %>%
   dplyr::filter_all(any_vars(.<0.05)) 
 OLG_mod_enrich_PD <- as.data.frame(t(OLG_mod_enrich_PD)) %>%
   rownames_to_column(var = "Module")
