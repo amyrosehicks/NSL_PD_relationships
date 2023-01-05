@@ -6,6 +6,8 @@ This repository contains code for the paper found [here], which used in silico a
 
 # License
 
+The code in this repository is released under an MIT license. This repository is distributed in the hope that it will be useful to the wider community, but without any warranty of any kind. Please see the LICENSE file for more details.
+
 # Contents
 
 <table>
