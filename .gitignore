@@ -47,4 +47,8 @@ vignettes/*.pdf
 
 *.pdf
 *.png
-*.html
+
+/docs/ARACNe/*.html
+/docs/Primary_GCNs/*.html
+/docs/Secondary_GCNs/*.html
+
