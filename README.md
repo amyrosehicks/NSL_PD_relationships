@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/439061046.svg)](https://zenodo.org/badge/latestdoi/439061046)
+
 # Background
 
 This repository contains code for the paper found [here], which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
