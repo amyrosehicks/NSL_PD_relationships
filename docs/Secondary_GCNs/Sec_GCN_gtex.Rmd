@@ -1367,16 +1367,18 @@ big_figure2$`-log10(p.value)`[is.na(big_figure2$`-log10(p.value)`)] <- 0
 # Remove cell types with no enrichments per network
 big_figure3 <- big_figure2 %>%
   dplyr::filter(Enrichment < 1)  %>%
-  dplyr::arrange(Cell_type)
+  dplyr::arrange(Cell_type) %>%
+  dplyr::mutate(FDR = p.adjust(Enrichment, method = "fdr")) %>%
+  dplyr::mutate(`-log10(FDR)` = -log10(FDR))
 ```
 
 ```{r}
 # Produce plot
 ggplot(big_figure3, aes(Gene, Cell_type)) +
-  geom_tile(aes(fill = `-log10(p.value)`)) +
-  geom_text(aes(label = signif.num2(Enrichment)), size = 3) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num2(FDR)), size = 3) +
   scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,15.5)) +
-  labs(y = "Cell type", fill = "-log10(p-value)") +
+  labs(y = "Cell type", fill = "-log10(FDR)") +
   facet_grid(factor(Network, 
                     levels = c("None", 
                                "Astrocyte-corrected", 
@@ -1392,24 +1394,40 @@ ggplot(big_figure3, aes(Gene, Cell_type)) +
 ```
 
 ## PD genes 
-Second, the overall clustering of the PD associated genes was examined.
+Second, the overall clustering of the PD associated genes was examined, focusing on modules containing *KAT8* and *KANSL1*.
 ```{r}
-# Join together PD gene list enrichment tables
-N_PD_mendelian_mod1$List <- "Mendelian PD"
-N_PD_GWAS_mod1$List <- "Sporadic PD"
-N_PD_mod <- dplyr::bind_rows(N_PD_mendelian_mod1, N_PD_GWAS_mod1)
+# Join together PD gene list enrichment tables, filter for KAT8/KANSL1 modules
+N_PD_mendelian_mod2 <- N_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("darkslateblue", "salmon4"))
+N_PD_GWAS_mod2 <- N_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("darkslateblue", "salmon4"))
+N_PD_mod <- dplyr::bind_rows(N_PD_mendelian_mod2, N_PD_GWAS_mod2)
 N_PD_mod$Network <- "Neuron-corrected"
-MA_PD_mendelian_mod1$List <- "Mendelian PD"
-MA_PD_GWAS_mod1$List <- "Sporadic PD"
-MA_PD_mod <- dplyr::bind_rows(MA_PD_mendelian_mod1, MA_PD_GWAS_mod1)
-MA_PD_mod$Network <-"Astrocyte-corrected"
-MG_PD_mendelian_mod1$List <- "Mendelian PD"
-MG_PD_GWAS_mod1$List <- "Sporadic PD"
-MG_PD_mod <- dplyr::bind_rows(MG_PD_mendelian_mod1, MG_PD_GWAS_mod1)
-MG_PD_mod$Network <-"Microglia-corrected"
-OLG_PD_mendelian_mod1$List <- "Mendelian PD"
-OLG_PD_GWAS_mod1$List <- "Sporadic PD"
-OLG_PD_mod <- dplyr::bind_rows(OLG_PD_mendelian_mod1, OLG_PD_GWAS_mod1)
+MA_PD_mendelian_mod2 <- MA_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("cyan", "red"))
+MA_PD_GWAS_mod2 <- MA_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("cyan", "red"))
+MA_PD_mod <- dplyr::bind_rows(MA_PD_mendelian_mod2, MA_PD_GWAS_mod2)
+MA_PD_mod$Network <- "Astrocyte-corrected"
+MG_PD_mendelian_mod2 <- MG_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("red", "magenta"))
+MG_PD_GWAS_mod2 <- MG_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("red", "magenta"))
+MG_PD_mod <- dplyr::bind_rows(MG_PD_mendelian_mod2, MG_PD_GWAS_mod2)
+MG_PD_mod$Network <- "Microglia-corrected"
+OLG_PD_mendelian_mod2 <- OLG_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("green", "black"))
+OLG_PD_GWAS_mod2 <- OLG_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("green", "black"))
+OLG_PD_mod <- dplyr::bind_rows(OLG_PD_mendelian_mod2, OLG_PD_GWAS_mod2)
 OLG_PD_mod$Network <- "Oligodendrocyte-corrected"
 # Join all 4 network results into one table
 PD_fig <- do.call(rbind, list(N_PD_mod, MA_PD_mod, MG_PD_mod, OLG_PD_mod))
@@ -1419,6 +1437,15 @@ PD_fig <- dplyr::select(PD_fig, List, module, FDR, `-log10(FDR)`, Network)
 PD_fig <- rbind(PD_fig, c("zzz", "salmon4", 1, 1, "Neuron-corrected"))
 PD_fig$`-log10(FDR)` <- as.numeric(PD_fig$`-log10(FDR)`)
 PD_fig$FDR <- as.numeric(PD_fig$FDR)
+# Alter names 
+PD_fig$module[PD_fig$module=="salmon4"] <- "salmon4 (KAT8)"
+PD_fig$module[PD_fig$module=="darkslateblue"] <- "darkslateblue (KANSL1)"
+PD_fig$module[PD_fig$module=="red" & PD_fig$Network == "Astrocyte-corrected"] <- "red (KAT8)"
+PD_fig$module[PD_fig$module=="cyan"] <- "cyan (KANSL1)"
+PD_fig$module[PD_fig$module=="magenta"] <- "magenta (KAT8)"
+PD_fig$module[PD_fig$module=="red"& PD_fig$Network == "Microglia-corrected"] <- "red (KANSL1)"
+PD_fig$module[PD_fig$module=="green"] <- "green (KANSL1)"
+PD_fig$module[PD_fig$module=="black"] <- "black (KAT8)"
 ```
 
 ```{r}
