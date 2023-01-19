@@ -2,7 +2,7 @@
 
 # Background
 
-This repository contains code for the paper found [here], which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
+This repository contains code for the paper found [here](https://doi.org/10.1101/2023.01.16.523926 ), which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
 
 # Citation
 
