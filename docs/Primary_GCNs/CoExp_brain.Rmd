@@ -28,6 +28,7 @@ The NSL genes were searched in all available gene co-expression networks created
 # First initialise the datasets/packages to use
 CoExpGTEx::initDb(mandatory = T)
 CoExp10UKBEC::initDb(mandatory = T)
+source(file.path(here::here("scripts", "CoExp_functions.R")))
 ```
 
 ```{r}
@@ -85,7 +86,6 @@ Amygdala_gt_fig$`-log10(p.val)` <- -log10(Amygdala_gt_fig$p.val)
 Amygdala_gt_fig$FDR <- p.adjust(Amygdala_gt_fig$p.val, method = "fdr")
 Amygdala_gt_fig$`-log10(FDR)` <- -log10(Amygdala_gt_fig$FDR)
 # Create graph
-source(file.path(here::here("scripts", "CoExp_functions.R")))
 ggplot(Amygdala_gt_fig, aes(gene, reorder(module, position))) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
@@ -740,7 +740,7 @@ CRBL_uk_fig$`-log10(FDR)` <- -log10(CRBL_uk_fig$FDR)
 ggplot(CRBL_uk_fig, aes(gene, reorder(module, position))) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
-  scale_fill_gradient(low = "goldenrod3", high = "white") +
+  scale_fill_gradient(low = "white", high ="goldenrod3" , limits = c(0,3.5)) +
   labs(title = "Cerebellum", y = "Module", x = "Gene")
 ```
 
@@ -1210,8 +1210,14 @@ sumfig_uk$Position <- nrow(sumfig_uk):1
 ggplot(sumfig_uk, aes(gene, module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR)), size = 2) +
-  scale_fill_gradient(low = "white", high = "goldenrod3") +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,3.5)) +
   labs(y = "Module", x = "Gene") +
   facet_grid(Tissue ~ ., scales = "free", space = "free") +
-  theme(strip.text.y = element_text(angle = 0), axis.text = element_text(size = 6))
+  theme(
+    strip.text.y = element_text(angle = 0, size = 7), 
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
+

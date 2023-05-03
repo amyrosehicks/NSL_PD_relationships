@@ -67,8 +67,8 @@ check_source_files <- function(tissue, which.one, input_gene_list, result_gene_l
 # Changing p value to significance ***
 signif.num <- function(x) {
   symnum(x, corr = FALSE, na = FALSE, legend = FALSE,
-         cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), 
-         symbols = c("****", "***", "**", "*", "ns"))
+         cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1), 
+         symbols = c("****", "***", "**", "*", "+", "ns"))
 }
 signif.num2 <- function(x) {
   symnum(x, corr = FALSE, na = FALSE, legend = FALSE,
