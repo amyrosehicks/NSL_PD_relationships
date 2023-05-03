@@ -29,7 +29,7 @@ library(here)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-[CoExp (Garcia-Ruiz et al., 2021)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7943635/) contains **five** packages which contain gene co-expression networks constructed using data from **four** independent databases of tissue-specific transcriptomic data. **Frontal cortex** is the one tissue common to all of these databases. This markdown contains an exploration of GCN produced from data from the [UK Brain Expression Consortium](https://ukbec.wordpress.com/), which contains 134 brains from healthy individuals and up to 12 brain regions per brain, specifically from frontal cortex data. The gene co-expression network was downloaded from [GitHub](https://github.com/juanbot?tab=repositories). Relationships between the nine genes of the non-specific (**NSL**) complex and several other lists of genes of interest (see `Genelists.Rmd`) were examined.
+[CoExp (Garcia-Ruiz et al., 2021)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7943635/) contains **five** packages which contain gene co-expression networks constructed using data from **four** independent databases of tissue-specific transcriptomic data. **Frontal cortex** is the one tissue common to all of these databases. This markdown contains an exploration of GCN produced from data from the [UK Brain Expression Consortium](https://ukbec.wordpress.com/), which contains 134 brains from healthy individuals and up to 12 brain regions per brain, specifically from frontal cortex, substantia nigra and putamen data. The gene co-expression networks were downloaded from [GitHub](https://github.com/juanbot?tab=repositories). Relationships between the nine genes of the non-specific (**NSL**) complex and several other lists of genes of interest (see `Genelists.Rmd`) were examined.
 
 ```{r, results = FALSE}
 # First initialise the datasets/packages to use
@@ -76,22 +76,23 @@ PD_GWAS_ENSG <- as.character(PD_GWAS_list$Ensembl_ID)
 
 The number of genes in this list: **`r nrow(PD_GWAS_list)`**.
 
-# 2. Searching gene co-expression network
+# 2. Frontal cortex co-expression network
 ## 2.1. Network structure
 The overall structure of the network was first examined. 
 ```{r}
 # Display all modules in a specified tissue/network 
-CoExpNets::plotModSizes(tissue="FCTX", which.one="10UKBEC")
+CoExpNets::plotModSizes(tissue = "FCTX",
+                        which.one = "10UKBEC")
 ```
 
 ```{r}
 # Display network structure
-Net_tissue <- "FCTX"
-Database <- "10UKBEC"
-Eigengenes <- getNetworkEigengenes(which.one = Database, tissue = Net_tissue)
-cat(Net_tissue, "network was obtained from", nrow(Eigengenes),
+Eigengenes <- getNetworkEigengenes(which.one = "10UKBEC", 
+                                   tissue = "FCTX")
+cat("Frontal cortex network was obtained from", nrow(Eigengenes),
     "samples and has", ncol(Eigengenes), "modules\n")
-plotEGClustering(which.one = Database, tissue = Net_tissue)
+plotEGClustering(which.one = "10UKBEC", 
+                 tissue = "FCTX")
 ```
 
 ```{r}
@@ -110,7 +111,9 @@ corrplot(cor(Eigengenes), tl.srt = 45,
 First, the **NSL genes** were searched in the coexpression network. 
 ```{r, results = FALSE, warning = FALSE}
 # Search for gene list in dataset
-NSL_report_UK <- reportOnGenes(tissue = "FCTX", genes = NSL_genes, which.one = "10UKBEC")
+NSL_report_UK <- reportOnGenes(tissue = "FCTX", 
+                               genes = NSL_genes, 
+                               which.one = "10UKBEC")
 # Select report
 NSL_rep_UK <- NSL_report_UK$report
 # Count the number of genes in the output
@@ -124,8 +127,10 @@ The number of NSL genes is **`r nrow(NSL_list)`** and the number of genes in the
 # Show missing gene
 dplyr::setdiff(NSL_genes, NSL_rep_UK$gene)
 # Check source files if remaining gene is present
-source(file.path(here::here("scripts", "CoExp_functions.R")))
-check_synonyms("FCTX", "10UKBEC", NSL_genes, NSL_rep_UK$gene)
+check_synonyms("FCTX",
+               "10UKBEC", 
+               NSL_genes, 
+               NSL_rep_UK$gene)
 ```
 
 **4** of the missing genes were present in this network under aliases so these were replaced in the input list. One of the genes, *KANSL1* seemed to appear in the network under multiple different ENSGs, so this needed to be checked. 
@@ -141,7 +146,9 @@ NSL_UK_genes[NSL_UK_genes=="KANSL3"] <- "KIAA1310"
 The search was then repeated with these changes. 
 ```{r, results = FALSE, warning = FALSE}
 # Search for gene list in dataset
-NSL_report2_UK <- reportOnGenes(tissue = "FCTX", genes = NSL_UK_genes, which.one = "10UKBEC")
+NSL_report2_UK <- reportOnGenes(tissue = "FCTX", 
+                                genes = NSL_UK_genes,
+                                which.one = "10UKBEC")
 # Select report
 NSL_rep2_UK <- NSL_report2_UK$report
 # Count the number of genes in the output
@@ -151,7 +158,10 @@ NSL_rep2_UK_length <- nrow(NSL_rep2_UK)
 The remaining gene was not present in the source file under any aliases and searching in [Braineac](http://www.braineac.org/) itself suggests it is **not present** in this dataset. 
 ```{r}
 # Convert report into dataframe
-NSL_rep2_UK <- data.frame(matrix(unlist(NSL_rep2_UK), nrow = NSL_rep2_UK_length, byrow = FALSE), stringsAsFactors=FALSE)
+NSL_rep2_UK <- data.frame(matrix(unlist(NSL_rep2_UK), 
+                                 nrow = NSL_rep2_UK_length, 
+                                 byrow = FALSE), 
+                          stringsAsFactors=FALSE)
 names(NSL_rep2_UK)[2] <- "ENSG"
 names(NSL_rep2_UK)[3] <- "MM"
 names(NSL_rep2_UK)[4] <- "Module"
@@ -178,15 +188,13 @@ NSL_rep2_UK <- NSL_rep2_UK[, c(-1, -2)]
 NSL_rep2_UK <- data.frame(UK_genes, UK_ENSGs, NSL_rep2_UK)
 names(NSL_rep2_UK)[1] <- "Gene"
 names(NSL_rep2_UK)[2] <- "ENSG"
-# Order by p value
-NSL_rep2_UK <- NSL_rep2_UK[order(NSL_rep2_UK$Fisher), ]
 # FDR correct
 NSL_rep2_UK$FDR <- p.adjust(NSL_rep2_UK$Fisher, method = "fdr")
 ```
 
 ```{r}
 # Print report
-NSL_rep2_UK[,c(-6,-7,-8)]
+NSL_rep2_UK[,c(1,4,3,5,10,11,9)]
 ```
 
 ```{r}
@@ -221,7 +229,9 @@ The NSL genes appear in modules **`r NSL_UK_modules`** but were only significant
 Then the PD mendelian list was searched and the results filtered for the NSL enriched modules.
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-PD_mendelian_report_UK <- reportOnGenes(tissue = "FCTX", genes = PD_mendelian_genes, which.one = "10UKBEC")
+PD_mendelian_report_UK <- reportOnGenes(tissue = "FCTX", 
+                                        genes = PD_mendelian_genes,
+                                        which.one = "10UKBEC")
 # Select report
 PD_mendelian_rep_UK <- PD_mendelian_report_UK$report
 # Count number of genes in output 
@@ -233,7 +243,10 @@ The number of genes is **`r nrow(PD_mendelian_list)`** and the number of genes i
 # Show missing genes
 dplyr::setdiff(PD_mendelian_genes, PD_mendelian_rep_UK$gene)
 # Check if any synonyms of the genes are present in networks
-check_synonyms("FCTX", "10UKBEC", PD_mendelian_genes, PD_mendelian_rep_UK$gene)
+check_synonyms("FCTX", 
+               "10UKBEC", 
+               PD_mendelian_genes, 
+               PD_mendelian_rep_UK$gene)
 ```
 
 **2** genes appeared in the network under alias names, so these were replaced in the search list.
@@ -247,7 +260,9 @@ PD_mendelian_UK_genes[PD_mendelian_UK_genes=="TUBB4A"] <- "TUBB4"
 The search was then repeated with these changes.
 ```{r, results = FALSE, warning = FALSE}
 # Again search genes of interest in specified tissue/network 
-PD_mendelian_report2_UK <- reportOnGenes(tissue = "FCTX", genes = PD_mendelian_UK_genes, which.one = "10UKBEC")
+PD_mendelian_report2_UK <- reportOnGenes(tissue = "FCTX", 
+                                         genes = PD_mendelian_UK_genes, 
+                                         which.one = "10UKBEC")
 # Select report
 PD_mendelian_rep2_UK <- PD_mendelian_report2_UK$report 
 # Count number of genes in output
@@ -261,7 +276,10 @@ dplyr::setdiff(PD_mendelian_UK_genes, PD_mendelian_rep2_UK$gene)
 The number of genes in the search output was **`r PD_mendelian_rep2_UK_length`**, showing there were **`r nrow(PD_mendelian_list) - PD_mendelian_rep2_UK_length`** fewer genes than the original input list.
 ```{r}
 # Convert report into dataframe
-PD_mendelian_rep2_UK <- data.frame(matrix(unlist(PD_mendelian_rep2_UK), nrow = PD_mendelian_rep2_UK_length, byrow = FALSE), stringsAsFactors=FALSE)
+PD_mendelian_rep2_UK <- data.frame(matrix(unlist(PD_mendelian_rep2_UK), 
+                                          nrow = PD_mendelian_rep2_UK_length,
+                                          byrow = FALSE), 
+                                   stringsAsFactors=FALSE)
 names(PD_mendelian_rep2_UK)[1] <- "Gene"
 names(PD_mendelian_rep2_UK)[2] <- "ENSG"
 names(PD_mendelian_rep2_UK)[3] <- "MM"
@@ -272,8 +290,6 @@ names(PD_mendelian_rep2_UK)[7] <- "PD_genes"
 names(PD_mendelian_rep2_UK)[8] <- "Preservation"
 names(PD_mendelian_rep2_UK)[9] <- "Cell_type"
 names(PD_mendelian_rep2_UK)[10] <- "Fisher"
-# Order by p value
-PD_mendelian_rep2_UK <- PD_mendelian_rep2_UK[order(PD_mendelian_rep2_UK$Fisher), ]
 ```
 
 ```{r}
@@ -281,14 +297,16 @@ PD_mendelian_rep2_UK <- PD_mendelian_rep2_UK[order(PD_mendelian_rep2_UK$Fisher),
 PD_mendelian_NSL_mod_UK <- PD_mendelian_rep2_UK %>%
   filter(Module %in% NSL_UK_modules)
 # Print report without GO term and PD genes column
-PD_mendelian_NSL_mod_UK[, c(-6, -7, -8)]
+PD_mendelian_NSL_mod_UK[, c(1,4,3,5,10,9)]
 ```
 
 ### PD sporadic genes
 The PD sporadic list was also searched and the results filtered for the NSL enriched modules.
 ```{r, results = FALSE, warning = FALSE}
 # Search genes of interest in specified tissue/network 
-PD_GWAS_report_UK <- reportOnGenes(tissue = "FCTX", genes = PD_GWAS_genes, which.one = "10UKBEC")
+PD_GWAS_report_UK <- reportOnGenes(tissue = "FCTX", 
+                                   genes = PD_GWAS_genes, 
+                                   which.one = "10UKBEC")
 # Select report
 PD_GWAS_rep_UK <- PD_GWAS_report_UK$report 
 # Count the number of genes in the output
@@ -300,7 +318,10 @@ The number of PD GWAS genes is **`r nrow(PD_GWAS_list)`** and the number of gene
 # Show missing genes
 dplyr::setdiff(PD_GWAS_genes, PD_GWAS_rep_UK$gene)
 # Check if any synonyms of the genes are present in networks
-check_synonyms("FCTX", "10UKBEC", PD_GWAS_genes, PD_GWAS_rep_UK$gene)
+check_synonyms("FCTX",
+               "10UKBEC", 
+               PD_GWAS_genes,
+               PD_GWAS_rep_UK$gene)
 ```
 
 **11** genes appeared in the network under alias names, so these were replaced in the search list.
@@ -323,7 +344,9 @@ PD_GWAS_UK_genes[PD_GWAS_UK_genes=="ZNF192P1"] <- "ZNF389"
 The search is was then repeated with these changes.
 ```{r, results = FALSE, warning = FALSE}
 # Again search genes of interest in specified tissue/network 
-PD_GWAS_report2_UK <- reportOnGenes(tissue = "FCTX", genes = PD_GWAS_UK_genes, which.one = "10UKBEC")
+PD_GWAS_report2_UK <- reportOnGenes(tissue = "FCTX", 
+                                    genes = PD_GWAS_UK_genes, 
+                                    which.one = "10UKBEC")
 # Select report
 PD_GWAS_rep2_UK <- PD_GWAS_report2_UK$report 
 # Count number of genes in output
@@ -337,7 +360,10 @@ dplyr::setdiff(PD_GWAS_UK_genes, PD_GWAS_rep2_UK$gene)
 The number of genes in the search output was **`r PD_GWAS_rep2_UK_length`**, showing there were **`r nrow(PD_GWAS_list) - PD_GWAS_rep2_UK_length`** fewer genes than the original input list
 ```{r}
 # Convert report into dataframe
-PD_GWAS_rep2_UK <- data.frame(matrix(unlist(PD_GWAS_rep2_UK), nrow = PD_GWAS_rep2_UK_length, byrow = FALSE), stringsAsFactors=FALSE)
+PD_GWAS_rep2_UK <- data.frame(matrix(unlist(PD_GWAS_rep2_UK), 
+                                     nrow = PD_GWAS_rep2_UK_length,
+                                     byrow = FALSE), 
+                              stringsAsFactors=FALSE)
 names(PD_GWAS_rep2_UK)[1] <- "Gene"
 names(PD_GWAS_rep2_UK)[2] <- "ENSG"
 names(PD_GWAS_rep2_UK)[3] <- "MM"
@@ -348,8 +374,6 @@ names(PD_GWAS_rep2_UK)[7] <- "PD_genes"
 names(PD_GWAS_rep2_UK)[8] <- "Preservation"
 names(PD_GWAS_rep2_UK)[9] <- "Cell_type"
 names(PD_GWAS_rep2_UK)[10] <- "Fisher"
-# Order by p value
-PD_GWAS_rep2_UK <- PD_GWAS_rep2_UK[order(PD_GWAS_rep2_UK$Fisher), ]
 ```
 
 ```{r}
@@ -357,14 +381,16 @@ PD_GWAS_rep2_UK <- PD_GWAS_rep2_UK[order(PD_GWAS_rep2_UK$Fisher), ]
 PD_GWAS_NSL_mod_UK <- PD_GWAS_rep2_UK %>%
   filter(Module %in% NSL_UK_modules)
 # Print report without GO term and PD genes column
-PD_GWAS_NSL_mod_UK[, c(-6, -7, -8)]
+PD_GWAS_NSL_mod_UK[, c(1,4,3,5,10,9)]
 ```
 
 ### Gene ontology terms
 To examine the functional characteristics of these modules, the GO term enrichments annotated to these modules were extracted and simplified according to parent terms.
 ```{r}
 # Obtain gprofiler2 network annotations from the UKBEC package
-e2 = read.csv(file.path(here::here("data", "CoExp_source", "netFCTX.12.signed.it.20.rds_cor_pca.rds_gprofiler.csv")),
+e2 = read.csv(file.path(here::here("data", 
+                                   "CoExp_source", 
+                                   "netFCTX.12.signed.it.20.rds_cor_pca.rds_gprofiler.csv")),
               stringsAsFactors = FALSE)
 # Extract all GO term enrichments from source file for modules of interest
 NSL_UK_GO = e2[e2$query.number %in% NSL_UK_modules & e2$domain %in% c("BP", "CC", "MF"),]
@@ -462,6 +488,8 @@ melt_summ_UK <- UK_pvals_list %>%
   dplyr::filter(Module %in% NSL_UK_modules) %>%
   dplyr::distinct()
 # Prep for figure 
+melt_summ_UK$Gene_list[melt_summ_UK$Gene_list=="PD_mendelian"] <- "Mendelian PD"
+melt_summ_UK$Gene_list[melt_summ_UK$Gene_list=="PD_GWAS"] <- "Sporadic PD"
 melt_summ_UK$FDR <- as.numeric(melt_summ_UK$FDR)
 melt_summ_UK$Module <- as.character(melt_summ_UK$Module)
 melt_summ_UK$Gene_list <- as.character(melt_summ_UK$Gene_list)
@@ -471,6 +499,806 @@ melt_summ_UK$`-log10(FDR)` <- -log10(melt_summ_UK$FDR)
 ggplot(melt_summ_UK, aes(Gene_list, Module)) +
   geom_tile(aes(fill = `-log10(FDR)`)) +
   geom_text(aes(label = signif.num(FDR))) +
-  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,3.6)) +
-  labs(y = "Module", x = "Gene list")
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,2.4)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+# 3. Substantia nigra co-expression network
+## 3.1. Network structure
+The overall structure of the network was first examined. 
+```{r}
+# Display all modules in a specified tissue/network 
+CoExpNets::plotModSizes(tissue = "SNIG",
+                        which.one = "10UKBEC")
+```
+
+```{r}
+# Display network structure
+Eigengenes <- getNetworkEigengenes(which.one = "10UKBEC", 
+                                   tissue = "SNIG")
+cat("Substantia nigra network was obtained from", nrow(Eigengenes),
+    "samples and has", ncol(Eigengenes), "modules\n")
+plotEGClustering(which.one = "10UKBEC", 
+                 tissue = "SNIG")
+```
+
+```{r}
+# Display correlations between modules
+corrplot(cor(Eigengenes), tl.srt = 45,
+         tl.col = "black",
+         type = "upper", 
+         tl.cex = 0.45,
+         order = "hclust",
+         title = paste0("Eigengene correlations"),
+         mar = c(3, 2, 2.5, 4))
+```
+
+## 3.2. Gene set enrichment analysis {.tabset}
+### NSL genes
+First, the **NSL genes** were searched in the coexpression network. 
+```{r, results = FALSE, warning = FALSE}
+# Search for gene list in dataset
+NSL_report2_UK <- reportOnGenes(tissue = "SNIG",
+                                genes = NSL_UK_genes,
+                                which.one = "10UKBEC")
+# Select report
+NSL_rep2_UK <- NSL_report2_UK$report
+# Count the number of genes in the output
+NSL_rep2_UK_length <- nrow(NSL_rep2_UK)
+```
+
+The remaining gene was not present in the source file under any aliases and searching in [Braineac](http://www.braineac.org/) itself suggests it is **not present** in this dataset. 
+```{r}
+# Convert report into dataframe
+NSL_rep2_UK <- data.frame(matrix(unlist(NSL_rep2_UK), 
+                                 nrow = NSL_rep2_UK_length, 
+                                 byrow = FALSE),
+                          stringsAsFactors=FALSE)
+names(NSL_rep2_UK)[2] <- "ENSG"
+names(NSL_rep2_UK)[3] <- "MM"
+names(NSL_rep2_UK)[4] <- "Module"
+names(NSL_rep2_UK)[5] <- "Size"
+names(NSL_rep2_UK)[6] <- "GO_report"
+names(NSL_rep2_UK)[7] <- "PD_genes"
+names(NSL_rep2_UK)[8] <- "Preservation"
+names(NSL_rep2_UK)[9] <- "Cell_type"
+names(NSL_rep2_UK)[10] <- "Fisher"
+# Convert gene name column back to more common gene names
+UK_genes <- unlist(lapply(NSL_rep2_UK$ENSG, fromEnsembl2GeneName))
+UK_genes[UK_genes=="KIAA1267"] <- "KANSL1"
+UK_genes[UK_genes=="MYST1"] <- "KAT8"
+UK_genes[UK_genes=="C12orf41"] <- "KANSL2"
+UK_genes[UK_genes=="KIAA1310"] <- "KANSL3"
+# Convert ENSG column back to all ENSGs
+UK_ENSGs <- unlist(NSL_rep2_UK$ENSG)
+UK_ENSGs[UK_ENSGs=="KIAA1267"] <- "ENSG00000120071"
+UK_ENSGs[UK_ENSGs=="MYST1"] <- "ENSG00000103510"
+UK_ENSGs[UK_ENSGs=="C12orf41"] <- "ENSG00000139620"
+UK_ENSGs[UK_ENSGs=="KIAA1310"] <- "ENSG00000114982"
+# Remove first two columns
+NSL_rep2_UK <- NSL_rep2_UK[, c(-1, -2)]
+NSL_rep2_UK <- data.frame(UK_genes, UK_ENSGs, NSL_rep2_UK)
+names(NSL_rep2_UK)[1] <- "Gene"
+names(NSL_rep2_UK)[2] <- "ENSG"
+# FDR correct
+NSL_rep2_UK$FDR <- p.adjust(NSL_rep2_UK$Fisher, method = "fdr")
+```
+
+```{r}
+# Print report
+NSL_rep2_UK[,c(1,4,3,5,10,11,9)]
+```
+
+```{r}
+# Store NSL enriched modules
+NSL_UK_modules <- unique(NSL_rep2_UK$Module)
+# Select columns needed for figure
+NSL_fig_UK <- data.frame(NSL_rep2_UK$Module, NSL_rep2_UK$Gene, NSL_rep2_UK$FDR)
+names(NSL_fig_UK)[names(NSL_fig_UK)=="NSL_rep2_UK.FDR"] <- "FDR"
+names(NSL_fig_UK)[names(NSL_fig_UK)=="NSL_rep2_UK.Module"] <- "Module"
+names(NSL_fig_UK)[names(NSL_fig_UK)=="NSL_rep2_UK.Gene"] <- "Gene"
+# Prep for figure
+NSL_fig_UK$FDR <- as.numeric(NSL_fig_UK$FDR)
+NSL_fig_UK$Module <- as.character(NSL_fig_UK$Module)
+NSL_fig_UK <- dplyr::arrange(NSL_fig_UK, Module)
+NSL_fig_UK$`-log10(FDR)` <- -log10(NSL_fig_UK$FDR)
+# Produce plot
+ggplot(NSL_fig_UK, aes(Gene, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.4)) +
+  labs(y = "Module") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+The NSL genes appear in modules **`r NSL_UK_modules`** and were significantly enriched in the **black** and **green** modules.
+
+### PD mendelian genes 
+Then the PD mendelian list was searched and the results filtered for the NSL enriched modules.
+```{r, results = FALSE, warning = FALSE}
+# Search genes of interest in specified tissue/network 
+PD_mendelian_report_UK <- reportOnGenes(tissue = "SNIG", 
+                                        genes = PD_mendelian_genes, 
+                                        which.one = "10UKBEC")
+# Select report
+PD_mendelian_rep_UK <- PD_mendelian_report_UK$report
+# Count number of genes in output 
+PD_mendelian_rep_UK_length <- nrow(PD_mendelian_rep_UK)
+```
+
+The number of genes is **`r nrow(PD_mendelian_list)`** and the number of genes in the search output was **`r PD_mendelian_rep_UK_length`**, suggesting there were **`r nrow(PD_mendelian_list) - PD_mendelian_rep_UK_length`** genes missing from the search.
+```{r, warning = FALSE}
+# Show missing genes
+dplyr::setdiff(PD_mendelian_genes, PD_mendelian_rep_UK$gene)
+# Check if any synonyms of the genes are present in networks
+check_synonyms("SNIG",
+               "10UKBEC", 
+               PD_mendelian_genes,
+               PD_mendelian_rep_UK$gene)
+```
+
+**2** genes appeared in the network under alias names, so these were replaced in the search list.
+```{r}
+# Replace this in the list of genes
+PD_mendelian_UK_genes <- as.character(PD_mendelian_genes)
+PD_mendelian_UK_genes[PD_mendelian_UK_genes=="PRKN"] <- "PARK2"
+PD_mendelian_UK_genes[PD_mendelian_UK_genes=="TUBB4A"] <- "TUBB4"
+```
+
+The search was then repeated with these changes.
+```{r, results = FALSE, warning = FALSE}
+# Again search genes of interest in specified tissue/network 
+PD_mendelian_report2_UK <- reportOnGenes(tissue = "SNIG", 
+                                         genes = PD_mendelian_UK_genes,
+                                         which.one = "10UKBEC")
+# Select report
+PD_mendelian_rep2_UK <- PD_mendelian_report2_UK$report 
+# Count number of genes in output
+PD_mendelian_rep2_UK_length <- nrow(PD_mendelian_rep2_UK)
+```
+
+```{r}
+dplyr::setdiff(PD_mendelian_UK_genes, PD_mendelian_rep2_UK$gene)
+```
+
+The number of genes in the search output was **`r PD_mendelian_rep2_UK_length`**, showing there were **`r nrow(PD_mendelian_list) - PD_mendelian_rep2_UK_length`** fewer genes than the original input list.
+```{r}
+# Convert report into dataframe
+PD_mendelian_rep2_UK <- data.frame(matrix(unlist(PD_mendelian_rep2_UK), 
+                                          nrow = PD_mendelian_rep2_UK_length, 
+                                          byrow = FALSE), 
+                                   stringsAsFactors=FALSE)
+names(PD_mendelian_rep2_UK)[1] <- "Gene"
+names(PD_mendelian_rep2_UK)[2] <- "ENSG"
+names(PD_mendelian_rep2_UK)[3] <- "MM"
+names(PD_mendelian_rep2_UK)[4] <- "Module"
+names(PD_mendelian_rep2_UK)[5] <- "Size"
+names(PD_mendelian_rep2_UK)[6] <- "GO_report"
+names(PD_mendelian_rep2_UK)[7] <- "PD_genes"
+names(PD_mendelian_rep2_UK)[8] <- "Preservation"
+names(PD_mendelian_rep2_UK)[9] <- "Cell_type"
+names(PD_mendelian_rep2_UK)[10] <- "Fisher"
+```
+
+```{r}
+# Filter for NSL modules
+PD_mendelian_NSL_mod_UK <- PD_mendelian_rep2_UK %>%
+  filter(Module %in% NSL_UK_modules)
+# Print report without GO term and PD genes column
+PD_mendelian_NSL_mod_UK[, c(1,4,3,5,10,9)]
+```
+
+### PD sporadic genes
+The PD sporadic list was also searched and the results filtered for the NSL enriched modules.
+```{r, results = FALSE, warning = FALSE}
+# Search genes of interest in specified tissue/network 
+PD_GWAS_report_UK <- reportOnGenes(tissue = "SNIG", 
+                                   genes = PD_GWAS_genes, 
+                                   which.one = "10UKBEC")
+# Select report
+PD_GWAS_rep_UK <- PD_GWAS_report_UK$report 
+# Count the number of genes in the output
+PD_GWAS_rep_UK_length <- nrow(PD_GWAS_rep_UK)
+```
+
+The number of PD GWAS genes is **`r nrow(PD_GWAS_list)`** and the number of genes in the search output was **`r PD_GWAS_rep_UK_length`**, suggesting there were **`r nrow(PD_GWAS_list) - PD_GWAS_rep_UK_length`** genes missing from the search.
+```{r, warning = FALSE}
+# Show missing genes
+dplyr::setdiff(PD_GWAS_genes, PD_GWAS_rep_UK$gene)
+# Check if any synonyms of the genes are present in networks
+check_synonyms("SNIG", 
+               "10UKBEC", 
+               PD_GWAS_genes, 
+               PD_GWAS_rep_UK$gene)
+```
+
+**11** genes appeared in the network under alias names, so these were replaced in the search list.
+```{r}
+# Replace this in the list of genes
+PD_GWAS_UK_genes <- as.character(PD_GWAS_genes)
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="CCAR2"] <- "KIAA1967"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="LINC00174"] <- "NCRNA00174"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="MALSU1"] <- "C7orf30"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="PGF"] <- "PIGF"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="PPIP5K2"] <- "HISPPD1"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="RAB29"] <- "RAB7L1"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="RETREG3"] <- "FAM134C"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="SGF29"] <- "CCDC101"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="TMEM248"] <- "C7orf42"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="ZKSCAN8"] <- "ZNF192"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="ZNF192P1"] <- "ZNF389"
+```
+
+The search is was then repeated with these changes.
+```{r, results = FALSE, warning = FALSE}
+# Again search genes of interest in specified tissue/network 
+PD_GWAS_report2_UK <- reportOnGenes(tissue = "SNIG", 
+                                    genes = PD_GWAS_UK_genes,
+                                    which.one = "10UKBEC")
+# Select report
+PD_GWAS_rep2_UK <- PD_GWAS_report2_UK$report 
+# Count number of genes in output
+PD_GWAS_rep2_UK_length <- nrow(PD_GWAS_rep2_UK)
+```
+
+```{r}
+dplyr::setdiff(PD_GWAS_UK_genes, PD_GWAS_rep2_UK$gene)
+```
+
+The number of genes in the search output was **`r PD_GWAS_rep2_UK_length`**, showing there were **`r nrow(PD_GWAS_list) - PD_GWAS_rep2_UK_length`** fewer genes than the original input list
+```{r}
+# Convert report into dataframe
+PD_GWAS_rep2_UK <- data.frame(matrix(unlist(PD_GWAS_rep2_UK),
+                                     nrow = PD_GWAS_rep2_UK_length,
+                                     byrow = FALSE), 
+                              stringsAsFactors=FALSE)
+names(PD_GWAS_rep2_UK)[1] <- "Gene"
+names(PD_GWAS_rep2_UK)[2] <- "ENSG"
+names(PD_GWAS_rep2_UK)[3] <- "MM"
+names(PD_GWAS_rep2_UK)[4] <- "Module"
+names(PD_GWAS_rep2_UK)[5] <- "Size"
+names(PD_GWAS_rep2_UK)[6] <- "GO_report"
+names(PD_GWAS_rep2_UK)[7] <- "PD_genes"
+names(PD_GWAS_rep2_UK)[8] <- "Preservation"
+names(PD_GWAS_rep2_UK)[9] <- "Cell_type"
+names(PD_GWAS_rep2_UK)[10] <- "Fisher"
+```
+
+```{r}
+# Filter for NSL modules
+PD_GWAS_NSL_mod_UK <- PD_GWAS_rep2_UK %>%
+  filter(Module %in% NSL_UK_modules)
+# Print report without GO term and PD genes column
+PD_GWAS_NSL_mod_UK[, c(1,4,3,5,10,9)]
+```
+
+### Gene ontology terms
+To examine the functional characteristics of these modules, the GO term enrichments annotated to these modules were extracted and simplified according to parent terms.
+```{r}
+# Obtain gprofiler2 network annotations from the UKBEC package
+e2 = read.csv(file.path(here::here("data", 
+                                   "CoExp_source", 
+                                   "netSNIG.12.signed.it.20.rds_cor_pca.rds_gprofiler.csv")),
+              stringsAsFactors = FALSE)
+# Extract all GO term enrichments from source file for modules of interest
+NSL_UK_GO = e2[e2$query.number %in% NSL_UK_modules & e2$domain %in% c("BP", "CC", "MF"),]
+NSL_UK_GO_2 <- dplyr::select(NSL_UK_GO, query.number, term.id, term.name, domain, p.value)
+# Rename columns
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="query.number"] <- "gene_list"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="term.id"] <- "go_id"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="domain"] <- "go_type"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="term.name"] <- "go_term"
+# FDR correct p values
+NSL_UK_GO_2$p.value <- as.numeric(NSL_UK_GO_2$p.value)
+NSL_UK_GO_2$FDR <- p.adjust(NSL_UK_GO_2$p.value, method="fdr")
+```
+
+```{r, results = FALSE, warning = FALSE, message = FALSE}
+# GO reduce
+NSL_UK_GO_red <- go_reduce(pathway_df = NSL_UK_GO_2, 
+                           threshold = 0.7, 
+                           scores = NULL)
+```
+
+The GO term enrichments attached to these modules were extracted and simplified according to parent terms, then plotted.
+```{r, warning = FALSE}
+# Format
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="BP"] <- "GO: BP"
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="MF"] <- "GO: MF"
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="CC"] <- "GO: CC"
+NSL_UK_GO_red <- NSL_UK_GO_red %>%
+  tidyr::drop_na(parent_term) %>%
+  dplyr::arrange(desc(FDR))
+# Plot
+ggplot2::ggplot(NSL_UK_GO_red, aes(x = gene_list, y = parent_term)) + 
+  geom_point(size = 2, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4", limits = c(0,27)) +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Module", y = "") +
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6),
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm")
+    )
+``` 
+
+## 3.2. Summary
+The **frequency** of **genes** within each gene **list** apppearing in each of the **`r length(NSL_UK_modules)` NSL enriched modules** was calculated. 
+```{r}
+# Collate module results into one table
+UK1 <- PD_mendelian_NSL_mod_UK['Module']
+UK1['Gene_list'] <- "PD_mendelian"
+UK2 <- PD_GWAS_NSL_mod_UK['Module']
+UK2['Gene_list'] <- "PD_GWAS"
+UK_mods_list <- do.call(rbind, list(UK1, UK2))
+# Display as frequency of each module within each list
+UK_mod_freq <- with(UK_mods_list, table(Module, Gene_list))
+UK_mod_freq <- as.data.frame.matrix(UK_mod_freq)
+```
+
+```{r}
+knitr::kable(UK_mod_freq)
+```
+
+The **significance** of the **enrichments** of each **gene list** within each of the **`r length(NSL_UK_modules)` NSL enriched modules** was also calculated. P-values were **FDR-corrected** before summarising. 
+```{r}
+# FDR correct p values
+PD_mendelian_rep2_UK$FDR <- p.adjust(PD_mendelian_rep2_UK$Fisher, method = "fdr")
+PD_GWAS_rep2_UK$FDR <- p.adjust(PD_GWAS_rep2_UK$Fisher, method = "fdr")
+```
+
+```{r}
+# Collate module results into one table
+UKs1 <- data.frame(PD_mendelian_rep2_UK$Module, PD_mendelian_rep2_UK$FDR)
+names(UKs1)[names(UKs1)=="PD_mendelian_rep2_UK.FDR"] <- "FDR"
+names(UKs1)[names(UKs1)=="PD_mendelian_rep2_UK.Module"] <- "Module"
+UKs1$Gene_list <- "PD_mendelian"
+UKs2 <- data.frame(PD_GWAS_rep2_UK$Module, PD_GWAS_rep2_UK$FDR)
+names(UKs2)[names(UKs2)=="PD_GWAS_rep2_UK.FDR"] <- "FDR"
+names(UKs2)[names(UKs2)=="PD_GWAS_rep2_UK.Module"] <- "Module"
+UKs2$Gene_list <- "PD_GWAS"
+UK_pvals_list <- dplyr::bind_rows(UKs1, UKs2)
+# Display as true/false table
+UK_TF <- UK_pvals_list %>% 
+  dplyr::distinct() %>%
+  tidyr::spread(Gene_list, FDR)
+UK_TF <- dplyr::filter(UK_TF, Module %in% NSL_UK_modules)
+UK_TF <- tibble::column_to_rownames(UK_TF, var = "Module")
+```
+
+```{r}
+knitr::kable(UK_TF)
+```
+
+```{r}
+# Filter out small mitopahgy list and modules without NSL genes
+melt_summ_UK <- UK_pvals_list %>%
+  dplyr::filter(Module %in% NSL_UK_modules) %>%
+  dplyr::distinct()
+# Prep for figure 
+melt_summ_UK$Gene_list[melt_summ_UK$Gene_list=="PD_mendelian"] <- "Mendelian PD"
+melt_summ_UK$Gene_list[melt_summ_UK$Gene_list=="PD_GWAS"] <- "Sporadic PD"
+melt_summ_UK$FDR <- as.numeric(melt_summ_UK$FDR)
+melt_summ_UK$Module <- as.character(melt_summ_UK$Module)
+melt_summ_UK$Gene_list <- as.character(melt_summ_UK$Gene_list)
+melt_summ_UK <- dplyr::arrange(melt_summ_UK, Module)
+melt_summ_UK$`-log10(FDR)` <- -log10(melt_summ_UK$FDR)
+# Plot
+ggplot(melt_summ_UK, aes(Gene_list, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,2.4)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+# 4. Putamen co-expression network
+## 4.1. Network structure
+The overall structure of the network was first examined. 
+```{r}
+# Display all modules in a specified tissue/network 
+CoExpNets::plotModSizes(tissue = "PUTM",
+                        which.one = "10UKBEC")
+```
+
+```{r}
+# Display network structure
+Eigengenes <- getNetworkEigengenes(which.one = "10UKBEC", tissue = "PUTM")
+cat("Putamen network was obtained from", nrow(Eigengenes),
+    "samples and has", ncol(Eigengenes), "modules\n")
+plotEGClustering(which.one = "10UKBEC", tissue = "PUTM")
+```
+
+```{r}
+# Display correlations between modules
+corrplot(cor(Eigengenes), tl.srt = 45,
+         tl.col = "black",
+         type = "upper", 
+         tl.cex = 0.45,
+         order = "hclust",
+         title = paste0("Eigengene correlations"),
+         mar = c(3, 2, 2.5, 4))
+```
+
+## 4.2. Gene set enrichment analysis {.tabset}
+### NSL genes
+First, the **NSL genes** were searched in the coexpression network. 
+```{r, results = FALSE, warning = FALSE}
+# Search for gene list in dataset
+NSL_report2_UK <- reportOnGenes(tissue = "PUTM",
+                                genes = NSL_UK_genes, 
+                                which.one = "10UKBEC")
+# Select report
+NSL_rep2_UK <- NSL_report2_UK$report
+# Count the number of genes in the output
+NSL_rep2_UK_length <- nrow(NSL_rep2_UK)
+```
+
+The remaining gene was not present in the source file under any aliases and searching in [Braineac](http://www.braineac.org/) itself suggests it is **not present** in this dataset. 
+```{r}
+# Convert report into dataframe
+NSL_rep2_UK <- data.frame(matrix(unlist(NSL_rep2_UK), 
+                                 nrow = NSL_rep2_UK_length, 
+                                 byrow = FALSE),
+                          stringsAsFactors=FALSE)
+names(NSL_rep2_UK)[2] <- "ENSG"
+names(NSL_rep2_UK)[3] <- "MM"
+names(NSL_rep2_UK)[4] <- "Module"
+names(NSL_rep2_UK)[5] <- "Size"
+names(NSL_rep2_UK)[6] <- "GO_report"
+names(NSL_rep2_UK)[7] <- "PD_genes"
+names(NSL_rep2_UK)[8] <- "Preservation"
+names(NSL_rep2_UK)[9] <- "Cell_type"
+names(NSL_rep2_UK)[10] <- "Fisher"
+# Convert gene name column back to more common gene names
+UK_genes <- unlist(lapply(NSL_rep2_UK$ENSG, fromEnsembl2GeneName))
+UK_genes[UK_genes=="KIAA1267"] <- "KANSL1"
+UK_genes[UK_genes=="MYST1"] <- "KAT8"
+UK_genes[UK_genes=="C12orf41"] <- "KANSL2"
+UK_genes[UK_genes=="KIAA1310"] <- "KANSL3"
+# Convert ENSG column back to all ENSGs
+UK_ENSGs <- unlist(NSL_rep2_UK$ENSG)
+UK_ENSGs[UK_ENSGs=="KIAA1267"] <- "ENSG00000120071"
+UK_ENSGs[UK_ENSGs=="MYST1"] <- "ENSG00000103510"
+UK_ENSGs[UK_ENSGs=="C12orf41"] <- "ENSG00000139620"
+UK_ENSGs[UK_ENSGs=="KIAA1310"] <- "ENSG00000114982"
+# Remove first two columns
+NSL_rep2_UK <- NSL_rep2_UK[, c(-1, -2)]
+NSL_rep2_UK <- data.frame(UK_genes, UK_ENSGs, NSL_rep2_UK)
+names(NSL_rep2_UK)[1] <- "Gene"
+names(NSL_rep2_UK)[2] <- "ENSG"
+# FDR correct
+NSL_rep2_UK$FDR <- p.adjust(NSL_rep2_UK$Fisher, method = "fdr")
+```
+
+```{r}
+# Print report
+NSL_rep2_UK[,c(1,4,3,5,10,11,9)]
+```
+
+```{r}
+# Store NSL enriched modules
+NSL_UK_modules <- unique(NSL_rep2_UK$Module)
+# Select columns needed for figure
+NSL_fig_UK <- data.frame(NSL_rep2_UK$Module, NSL_rep2_UK$Gene, NSL_rep2_UK$FDR)
+names(NSL_fig_UK)[names(NSL_fig_UK)=="NSL_rep2_UK.FDR"] <- "FDR"
+names(NSL_fig_UK)[names(NSL_fig_UK)=="NSL_rep2_UK.Module"] <- "Module"
+names(NSL_fig_UK)[names(NSL_fig_UK)=="NSL_rep2_UK.Gene"] <- "Gene"
+# Prep for figure
+NSL_fig_UK$FDR <- as.numeric(NSL_fig_UK$FDR)
+NSL_fig_UK$Module <- as.character(NSL_fig_UK$Module)
+NSL_fig_UK <- dplyr::arrange(NSL_fig_UK, Module)
+NSL_fig_UK$`-log10(FDR)` <- -log10(NSL_fig_UK$FDR)
+# Produce plot
+ggplot(NSL_fig_UK, aes(Gene, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,3.6)) +
+  labs(y = "Module") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+The NSL genes appear in modules **`r NSL_UK_modules`** but were only significantly enriched in the **purple** module. 
+
+### PD mendelian genes 
+Then the PD mendelian list was searched and the results filtered for the NSL enriched modules.
+```{r, results = FALSE, warning = FALSE}
+# Search genes of interest in specified tissue/network 
+PD_mendelian_report_UK <- reportOnGenes(tissue = "PUTM", 
+                                        genes = PD_mendelian_genes,
+                                        which.one = "10UKBEC")
+# Select report
+PD_mendelian_rep_UK <- PD_mendelian_report_UK$report
+# Count number of genes in output 
+PD_mendelian_rep_UK_length <- nrow(PD_mendelian_rep_UK)
+```
+
+The number of genes is **`r nrow(PD_mendelian_list)`** and the number of genes in the search output was **`r PD_mendelian_rep_UK_length`**, suggesting there were **`r nrow(PD_mendelian_list) - PD_mendelian_rep_UK_length`** genes missing from the search.
+```{r, warning = FALSE}
+# Show missing genes
+dplyr::setdiff(PD_mendelian_genes, PD_mendelian_rep_UK$gene)
+# Check if any synonyms of the genes are present in networks
+check_synonyms("PUTM", 
+               "10UKBEC",
+               PD_mendelian_genes, 
+               PD_mendelian_rep_UK$gene)
+```
+
+**2** genes appeared in the network under alias names, so these were replaced in the search list.
+```{r}
+# Replace this in the list of genes
+PD_mendelian_UK_genes <- as.character(PD_mendelian_genes)
+PD_mendelian_UK_genes[PD_mendelian_UK_genes=="PRKN"] <- "PARK2"
+PD_mendelian_UK_genes[PD_mendelian_UK_genes=="TUBB4A"] <- "TUBB4"
+```
+
+The search was then repeated with these changes.
+```{r, results = FALSE, warning = FALSE}
+# Again search genes of interest in specified tissue/network 
+PD_mendelian_report2_UK <- reportOnGenes(tissue = "PUTM", 
+                                         genes = PD_mendelian_UK_genes, 
+                                         which.one = "10UKBEC")
+# Select report
+PD_mendelian_rep2_UK <- PD_mendelian_report2_UK$report 
+# Count number of genes in output
+PD_mendelian_rep2_UK_length <- nrow(PD_mendelian_rep2_UK)
+```
+
+```{r}
+dplyr::setdiff(PD_mendelian_UK_genes, PD_mendelian_rep2_UK$gene)
+```
+
+The number of genes in the search output was **`r PD_mendelian_rep2_UK_length`**, showing there were **`r nrow(PD_mendelian_list) - PD_mendelian_rep2_UK_length`** fewer genes than the original input list.
+```{r}
+# Convert report into dataframe
+PD_mendelian_rep2_UK <- data.frame(matrix(unlist(PD_mendelian_rep2_UK), 
+                                          nrow = PD_mendelian_rep2_UK_length,
+                                          byrow = FALSE), 
+                                   stringsAsFactors=FALSE)
+names(PD_mendelian_rep2_UK)[1] <- "Gene"
+names(PD_mendelian_rep2_UK)[2] <- "ENSG"
+names(PD_mendelian_rep2_UK)[3] <- "MM"
+names(PD_mendelian_rep2_UK)[4] <- "Module"
+names(PD_mendelian_rep2_UK)[5] <- "Size"
+names(PD_mendelian_rep2_UK)[6] <- "GO_report"
+names(PD_mendelian_rep2_UK)[7] <- "PD_genes"
+names(PD_mendelian_rep2_UK)[8] <- "Preservation"
+names(PD_mendelian_rep2_UK)[9] <- "Cell_type"
+names(PD_mendelian_rep2_UK)[10] <- "Fisher"
+```
+
+```{r}
+# Filter for NSL modules
+PD_mendelian_NSL_mod_UK <- PD_mendelian_rep2_UK %>%
+  filter(Module %in% NSL_UK_modules)
+# Print report without GO term and PD genes column
+PD_mendelian_NSL_mod_UK[, c(1,4,3,5,10,9)]
+```
+
+### PD sporadic genes
+The PD sporadic list was also searched and the results filtered for the NSL enriched modules.
+```{r, results = FALSE, warning = FALSE}
+# Search genes of interest in specified tissue/network 
+PD_GWAS_report_UK <- reportOnGenes(tissue = "PUTM", 
+                                   genes = PD_GWAS_genes, 
+                                   which.one = "10UKBEC")
+# Select report
+PD_GWAS_rep_UK <- PD_GWAS_report_UK$report 
+# Count the number of genes in the output
+PD_GWAS_rep_UK_length <- nrow(PD_GWAS_rep_UK)
+```
+
+The number of PD GWAS genes is **`r nrow(PD_GWAS_list)`** and the number of genes in the search output was **`r PD_GWAS_rep_UK_length`**, suggesting there were **`r nrow(PD_GWAS_list) - PD_GWAS_rep_UK_length`** genes missing from the search.
+```{r, warning = FALSE}
+# Show missing genes
+dplyr::setdiff(PD_GWAS_genes, PD_GWAS_rep_UK$gene)
+# Check if any synonyms of the genes are present in networks
+check_synonyms("PUTM",
+               "10UKBEC", 
+               PD_GWAS_genes,
+               PD_GWAS_rep_UK$gene)
+```
+
+**11** genes appeared in the network under alias names, so these were replaced in the search list.
+```{r}
+# Replace this in the list of genes
+PD_GWAS_UK_genes <- as.character(PD_GWAS_genes)
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="CCAR2"] <- "KIAA1967"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="LINC00174"] <- "NCRNA00174"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="MALSU1"] <- "C7orf30"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="PGF"] <- "PIGF"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="PPIP5K2"] <- "HISPPD1"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="RAB29"] <- "RAB7L1"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="RETREG3"] <- "FAM134C"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="SGF29"] <- "CCDC101"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="TMEM248"] <- "C7orf42"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="ZKSCAN8"] <- "ZNF192"
+PD_GWAS_UK_genes[PD_GWAS_UK_genes=="ZNF192P1"] <- "ZNF389"
+```
+
+The search is was then repeated with these changes.
+```{r, results = FALSE, warning = FALSE}
+# Again search genes of interest in specified tissue/network 
+PD_GWAS_report2_UK <- reportOnGenes(tissue = "PUTM", 
+                                    genes = PD_GWAS_UK_genes,
+                                    which.one = "10UKBEC")
+# Select report
+PD_GWAS_rep2_UK <- PD_GWAS_report2_UK$report 
+# Count number of genes in output
+PD_GWAS_rep2_UK_length <- nrow(PD_GWAS_rep2_UK)
+```
+
+```{r}
+dplyr::setdiff(PD_GWAS_UK_genes, PD_GWAS_rep2_UK$gene)
+```
+
+The number of genes in the search output was **`r PD_GWAS_rep2_UK_length`**, showing there were **`r nrow(PD_GWAS_list) - PD_GWAS_rep2_UK_length`** fewer genes than the original input list
+```{r}
+# Convert report into dataframe
+PD_GWAS_rep2_UK <- data.frame(matrix(unlist(PD_GWAS_rep2_UK), 
+                                     nrow = PD_GWAS_rep2_UK_length, 
+                                     byrow = FALSE), 
+                              stringsAsFactors=FALSE)
+names(PD_GWAS_rep2_UK)[1] <- "Gene"
+names(PD_GWAS_rep2_UK)[2] <- "ENSG"
+names(PD_GWAS_rep2_UK)[3] <- "MM"
+names(PD_GWAS_rep2_UK)[4] <- "Module"
+names(PD_GWAS_rep2_UK)[5] <- "Size"
+names(PD_GWAS_rep2_UK)[6] <- "GO_report"
+names(PD_GWAS_rep2_UK)[7] <- "PD_genes"
+names(PD_GWAS_rep2_UK)[8] <- "Preservation"
+names(PD_GWAS_rep2_UK)[9] <- "Cell_type"
+names(PD_GWAS_rep2_UK)[10] <- "Fisher"
+```
+
+```{r}
+# Filter for NSL modules
+PD_GWAS_NSL_mod_UK <- PD_GWAS_rep2_UK %>%
+  filter(Module %in% NSL_UK_modules)
+# Print report without GO term and PD genes column
+PD_GWAS_NSL_mod_UK[, c(1,4,3,5,10,9)]
+```
+
+### Gene ontology terms
+To examine the functional characteristics of these modules, the GO term enrichments annotated to these modules were extracted and simplified according to parent terms.
+```{r}
+# Obtain gprofiler2 network annotations from the UKBEC package
+e2 = read.csv(file.path(here::here("data", 
+                                   "CoExp_source", 
+                                   "netPUTM.12.signed.it.20.rds_cor_pca.rds_gprofiler.csv")),
+              stringsAsFactors = FALSE)
+# Extract all GO term enrichments from source file for modules of interest
+NSL_UK_GO = e2[e2$query.number %in% NSL_UK_modules & e2$domain %in% c("BP", "CC", "MF"),]
+NSL_UK_GO_2 <- dplyr::select(NSL_UK_GO, query.number, term.id, term.name, domain, p.value)
+# Rename columns
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="query.number"] <- "gene_list"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="term.id"] <- "go_id"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="domain"] <- "go_type"
+names(NSL_UK_GO_2)[names(NSL_UK_GO_2)=="term.name"] <- "go_term"
+# FDR correct p values
+NSL_UK_GO_2$p.value <- as.numeric(NSL_UK_GO_2$p.value)
+NSL_UK_GO_2$FDR <- p.adjust(NSL_UK_GO_2$p.value, method="fdr")
+```
+
+```{r, results = FALSE, warning = FALSE, message = FALSE}
+# GO reduce
+NSL_UK_GO_red <- go_reduce(pathway_df = NSL_UK_GO_2, threshold = 0.7, scores = NULL)
+```
+
+The GO term enrichments attached to these modules were extracted and simplified according to parent terms, then plotted.
+```{r, warning = FALSE}
+# Format
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="BP"] <- "GO: BP"
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="MF"] <- "GO: MF"
+NSL_UK_GO_red$go_type[NSL_UK_GO_red$go_type=="CC"] <- "GO: CC"
+NSL_UK_GO_red <- NSL_UK_GO_red %>%
+  tidyr::drop_na(parent_term) %>%
+  dplyr::arrange(desc(FDR))
+# Plot
+ggplot2::ggplot(NSL_UK_GO_red, aes(x = gene_list, y = parent_term)) + 
+  geom_point(size = 2, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4", limits = c(0,30)
+                         ) +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Module", y = "") +
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6),
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm")
+    )
+``` 
+
+## 4.2. Summary
+The **frequency** of **genes** within each gene **list** apppearing in each of the **`r length(NSL_UK_modules)` NSL enriched modules** was calculated. 
+```{r}
+# Collate module results into one table
+UK1 <- PD_mendelian_NSL_mod_UK['Module']
+UK1['Gene_list'] <- "PD_mendelian"
+UK2 <- PD_GWAS_NSL_mod_UK['Module']
+UK2['Gene_list'] <- "PD_GWAS"
+UK_mods_list <- do.call(rbind, list(UK1, UK2))
+# Display as frequency of each module within each list
+UK_mod_freq <- with(UK_mods_list, table(Module, Gene_list))
+UK_mod_freq <- as.data.frame.matrix(UK_mod_freq)
+```
+
+```{r}
+knitr::kable(UK_mod_freq)
+```
+
+The **significance** of the **enrichments** of each **gene list** within each of the **`r length(NSL_UK_modules)` NSL enriched modules** was also calculated. P-values were **FDR-corrected** before summarising. 
+```{r}
+# FDR correct p values
+PD_mendelian_rep2_UK$FDR <- p.adjust(PD_mendelian_rep2_UK$Fisher, method = "fdr")
+PD_GWAS_rep2_UK$FDR <- p.adjust(PD_GWAS_rep2_UK$Fisher, method = "fdr")
+```
+
+```{r}
+# Collate module results into one table
+UKs1 <- data.frame(PD_mendelian_rep2_UK$Module, PD_mendelian_rep2_UK$FDR)
+names(UKs1)[names(UKs1)=="PD_mendelian_rep2_UK.FDR"] <- "FDR"
+names(UKs1)[names(UKs1)=="PD_mendelian_rep2_UK.Module"] <- "Module"
+UKs1$Gene_list <- "PD_mendelian"
+UKs2 <- data.frame(PD_GWAS_rep2_UK$Module, PD_GWAS_rep2_UK$FDR)
+names(UKs2)[names(UKs2)=="PD_GWAS_rep2_UK.FDR"] <- "FDR"
+names(UKs2)[names(UKs2)=="PD_GWAS_rep2_UK.Module"] <- "Module"
+UKs2$Gene_list <- "PD_GWAS"
+UK_pvals_list <- dplyr::bind_rows(UKs1, UKs2)
+# Display as true/false table
+UK_TF <- UK_pvals_list %>% 
+  dplyr::distinct() %>%
+  tidyr::spread(Gene_list, FDR)
+UK_TF <- dplyr::filter(UK_TF, Module %in% NSL_UK_modules)
+UK_TF <- tibble::column_to_rownames(UK_TF, var = "Module")
+```
+
+```{r}
+knitr::kable(UK_TF)
+```
+
+```{r}
+# Filter out small mitopahgy list and modules without NSL genes
+melt_summ_UK <- UK_pvals_list %>%
+  dplyr::filter(Module %in% NSL_UK_modules) %>%
+  dplyr::distinct()
+# Prep for figure 
+melt_summ_UK$Gene_list[melt_summ_UK$Gene_list=="PD_mendelian"] <- "Mendelian PD"
+melt_summ_UK$Gene_list[melt_summ_UK$Gene_list=="PD_GWAS"] <- "Sporadic PD"
+melt_summ_UK$FDR <- as.numeric(melt_summ_UK$FDR)
+melt_summ_UK$Module <- as.character(melt_summ_UK$Module)
+melt_summ_UK$Gene_list <- as.character(melt_summ_UK$Gene_list)
+melt_summ_UK <- dplyr::arrange(melt_summ_UK, Module)
+melt_summ_UK$`-log10(FDR)` <- -log10(melt_summ_UK$FDR)
+# Plot
+ggplot(melt_summ_UK, aes(Gene_list, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,2.4)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
 ```
