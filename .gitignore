@@ -48,7 +48,5 @@ vignettes/*.pdf
 *.pdf
 *.png
 
-/docs/ARACNe/*.html
-/docs/Primary_GCNs/*.html
-/docs/Secondary_GCNs/*.html
 
+/data/Gene_lists/mod_gene_lists/*.csv
