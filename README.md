@@ -31,7 +31,7 @@ The code in this repository is released under an MIT license. This repository is
 </tr>
 <tr class="even">
 <td><a href="docs" class="uri">docs</a></td>
-<td>Contains all <code>.Rmd</code>s describing and summarising analyses performed for this project. Corresponding <code>.html</code>s can be viewed interactively [here](https://amyrosehicks.github.io/NSL_PD_relationships/)</a></td>
+<td>Contains all <code>.Rmd</code>s describing and summarising analyses performed for this project. Corresponding <code>.html</code>s can be viewed interactively here: https://amyrosehicks.github.io/NSL_PD_relationships/</a></td>
 </tr>
 <tr class="even">
 <td><a href="scripts" class="uri">scripts</a></td>
