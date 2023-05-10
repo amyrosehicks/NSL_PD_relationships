@@ -1,0 +1,1325 @@
+---
+title: "ARACNe_analysis"
+author: "Amy Hicks"
+date: "15/12/2021"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(biomaRt)
+library(tidyverse)
+library(CoExpGTEx)
+library(CoExp10UKBEC)
+library(CoExpNets)
+library(knitr)
+library(readxl)
+library(gprofiler2)
+library(rutils)
+library(tidystringdist)
+library(stringr)
+library(here)
+knitr::opts_chunk$set(echo = TRUE)
+```
+The basis of Algorithm for the Reconstruction of Accurate Cellular Networks with Adaptive Partitioning (ARACNe-AP) is introduced [here](https://github.com/califano-lab/ARACNe-AP), written in Java. This set of instructions is adapted from `UsingAracne.Rmd` provided by Juan Botia, which allows it to instead be used from within R. The data used was obtained from primary gene co-expression networks from [CoExp (Garcia-Ruiz et al., 2021)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7943635/).
+
+# 1. Setting up ARACNe
+Local functions are described in more detail in the `UsingAracne` markdown. 
+```{r, eval = FALSE}
+# Create fucntions for file paths
+gjp = function(){ return("/usr/bin/java")}
+gsp = function(){ return(file.path(here::here("docs", "ARACNe/")))}
+# Create the function for running ARACNe
+runAracneMIJava = function(exp.file,
+                           out.folder, 
+                           tfs.file,
+                           p.value,
+                           seed,
+                           calc.threshold,
+                           tissue,
+                           which.one){
+	command = paste0(gjp()," -jar ",gsp(),"/Aracne.jar -e ",exp.file," -o ", out.folder,
+			" --tfs ",tfs.file," --pvalue ",p.value," --seed ")
+	if(calc.threshold){
+		init.command = paste0(command,seed[1]," --calculateThreshold")
+		cat("Running command\"",init.command,"\"\n")
+		system(init.command)
+	}
+	
+	if(length(seed) == 1){
+		command = paste0(command,seed," --nobootstrap")
+		cat("Running command\"",command,"\"\n")
+		system(command)
+		out.file = paste0(out.folder,"/",tissue,".",which.one,".aracnet.txt")
+		command = paste0("mv ",out.folder,"/nobootstrap_network.txt ",out.file)
+		cat("Running command\"",command,"\"\n")
+		system(command)
+		
+		return(read.delim(out.file))
+	}
+	
+	for(single.seed in seed){
+		local.command = paste0(command,single.seed)
+		cat("Running command\"",local.command,"\"\n")
+		system(local.command)	
+	}
+	command = paste0(gjp()," -jar ",gsp(),"/Aracne.jar -o ", out.folder,
+			" --consolidate")
+	cat("Running command\"",command,"\"\n")
+	system(command)	
+	file.remove(list.files(path=out.folder,pattern="bootstrapNetwork_*",full.names=T))
+	out.file = paste0(exp.file,".aracnet.txt")
+	command = paste0("mv ",out.folder,"/network.txt ",
+			out.file)
+	cat("Running command\"",command,"\"\n")
+	system(command)
+	return(read.delim(out.file))
+	
+}
+```
+
+# 2. File formatting
+NSL genes were selected as the **regulator** genes. 
+
+## 2.1. Regulator file
+```{r, results = FALSE}
+# Initialise the datasets to use
+CoExpGTEx::initDb(mandatory = T)
+CoExp10UKBEC::initDb(mandatory = T)
+# Open ensembl
+ensembl = useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl")
+# Load gene list (see Genelists.R for details)
+NSL_list <- read.delim(file.path(here::here("data","Gene_lists", "NSL_list.txt")))
+# Load PD lists
+PD_mendelian_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_mendelian_list.txt")))
+PD_mendelian_ENSG <- as.character(PD_mendelian_list$Ensembl_ID)
+PD_GWAS_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_GWAS_list.txt")))
+PD_GWAS_ENSG <- as.character(PD_GWAS_list$Ensembl_ID)
+```
+
+```{r, results = FALSE}
+# Add UKBEC gene names
+NSL_list$UKBEC <- as.character(NSL_list$Gene_symbol)
+NSL_list$UKBEC[NSL_list$UKBEC=="KANSL1"] <- "KIAA1267"
+NSL_list$UKBEC[NSL_list$UKBEC=="KAT8"] <- "MYST1"
+NSL_list$UKBEC[NSL_list$UKBEC=="KANSL2"] <- "C12orf41"
+NSL_list$UKBEC[NSL_list$UKBEC=="KANSL3"] <- "KIAA1310"
+# Load UKBEC tID conversion table copied from CoExpNets source files
+trans.table <- read.csv(file.path(here::here("data", "CoExp_source", "annot_19K.csv")))
+trans.table <- as.data.frame(trans.table)
+trans.table$XtID <- as.character(trans.table$XtID)
+trans.table$Gene_Symbol <- as.character(trans.table$Gene_Symbol)
+# Add column with UKBEC tIDs
+NSL_list$UKBEC_id <- as.character(NSL_list$UKBEC)
+for (i in trans.table$Gene_Symbol) {
+  loc <- match(i, trans.table$Gene_Symbol)
+  NSL_list$UKBEC_id[NSL_list$UKBEC_id == i] <- trans.table$XtID[loc]
+}
+```
+
+```{r, warning = FALSE, results = FALSE}
+# Add modules and module memberships for GTEx
+NSL_list <- dplyr::arrange(NSL_list, Gene_symbol)
+gt_MM <- CoExpNets::getMM(net = NULL, expr.data.file = NULL, tissue = "FCortex", which.one = "gtexv6", genes = NSL_list$Ensembl_ID) %>% 
+  dplyr::arrange(name)
+NSL_list$GTEx_mod <- gt_MM$module
+NSL_list$GTEx_MM <- gt_MM$mm
+# Add modules and module memberships for UKBEC
+uk_MM <- CoExpNets::reportOnGenes(tissue = "FCTX", genes = NSL_list$UKBEC, which.one = "10UKBEC")
+uk_MM <- uk_MM$report
+NSL_list$UKBEC_mod <- as.character(NSL_list$UKBEC)
+NSL_list$UKBEC_MM <- as.character(NSL_list$UKBEC)
+for (i in uk_MM$gene) {
+  loc <- match(i, uk_MM$gene)
+  NSL_list$UKBEC_MM[NSL_list$UKBEC_MM == i] <- uk_MM$mm[loc]
+}
+for (i in uk_MM$gene) {
+  loc <- match(i, uk_MM$gene)
+  NSL_list$UKBEC_mod[NSL_list$UKBEC_mod == i] <- uk_MM$module[loc]
+}
+```
+
+## 2.2. Expression files {.tabset}
+### GTEx
+One set of genes was selected as the **regulated** genes from the **GTEx frontal cortex** coexpression network: all genes from `red` and `darkred` modules.
+```{r, eval = FALSE}
+# Load frontal cortex expression values
+GTExnet <- CoExpNets::getExprDataFromTissue(tissue = "FCortex", which.one = "gtexv6")
+# Format expression file correctly
+GTExnet <- t(GTExnet)
+GTExnet <- as.data.frame(GTExnet)
+GTExnet <- rownames_to_column(GTExnet, var = "gene")
+# Get list of genes in red/darkred modules
+red_genes <- CoExpNets::getGenesFromModule(tissue = "FCortex", which.one = "gtexv6", module = "red")
+darkred_genes <- CoExpNets::getGenesFromModule(tissue = "FCortex", which.one = "gtexv6", module = "darkred")
+gt_genes <- append(red_genes, darkred_genes)
+# Filter expression values for red/darkred modules
+gt_expr <- dplyr::filter(GTExnet, gene %in% gt_genes)
+# Save expression files
+write.table(gt_expr, "gt_expr.txt", sep="\t", row.names=FALSE)
+# Remove " from files
+```
+
+### UKBEC
+One set of genes was selected as the **regulated** genes from the **UKBEC frontal cortex** coexpression network: all genes from `black` module.
+```{r, eval = FALSE}
+# Load frontal cortex expression values
+UKnet <- CoExpNets::getExprDataFromTissue(tissue = "FCTX", which.one = "10UKBEC")
+# Format expression file correctly
+UKnet <- t(UKnet)
+UKnet <- as.data.frame(UKnet)
+UKnet <- rownames_to_column(UKnet, var = "gene")
+# Get list of genes in black module
+black_genes <- CoExpNets::getGenesFromModule(tissue = "FCTX", which.one = "10UKBEC", module = "black")
+# Filter expression values for black modules
+uk_expr <- dplyr::filter(UKnet, gene %in% black_genes)
+# Save expression files
+write.table(uk_expr, "uk_expr.txt", sep="\t", row.names=FALSE)
+# Remove " from files
+```
+
+# 3. Running analysis {.tabset}
+## GTEx
+The `runAracneMIJava` function was run on the regulated gene set, with the recommended `p.value` and bootstrapped seed of `1:10000`.
+```{r, eval = FALSE}
+# Run function 
+gt_aracne <- runAracneMIJava(exp.file = file.path(here::here("data", "ARACNe", "gtex_expr.txt")),
+                              out.folder = file.path(here::here("data", "ARACNe/")),
+                              tfs.file =file.path(here::here("data", "Gene_lists", "NSL_ENSG.txt")),
+                              p.value = "1E-8",
+                              seed = 1:10000,
+                              calc.threshold = TRUE,
+                              tissue = "FCortex",
+                              which.one = "GTEx_10000")
+```
+
+```{r}
+# Load output file
+gt_aracne <- read.delim(file.path(here::here("data", "ARACNe", "gtex_expr.txt.aracnet.txt")))
+```
+
+## UKBEC
+Again the `runAracneMIJava` function was run on the regulated gene set, with the recommended `p.value` and bootstrapped seed of `1:10000`.
+```{r, eval = FALSE}
+# Run function on red/darkred module genes
+uk_aracne <- runAracneMIJava(exp.file = file.path(here::here("data", "ARACNe", "ukbec_expr.txt")),
+                               out.folder = file.path(here::here("data", "ARACNe/")),
+                               tfs.file = file.path(here::here("data", "Gene_lists", "NSL_ukbec.txt")),
+                               p.value = "1E-8",
+                               seed = 1:10000,
+                               calc.threshold = TRUE,
+                               tissue = "FCTX",
+                               which.one = "UKBEC_10000")
+```
+
+```{r}
+# Load output file 
+uk_aracne <- read.delim(file.path(here::here("data", "ARACNe", "ukbec_expr.txt.aracnet.txt")))
+```
+
+# 4. GTEx results 
+## 4.1. Characteristics {.tabset}
+### Individual regulons
+The function returned a total of **`r nrow(gt_aracne)`** possible regulatory relationships involving the NSL genes within the `red` and `darkred` modules. 
+```{r}
+# Add MI quantile to result
+gt_aracne$MI_quantile <- ecdf(gt_aracne$MI)(gt_aracne$MI)
+# Add regulator gene symbols to result
+gt_aracne$Regulator_gene<- as.character(gt_aracne$Regulator)
+gt_aracne$Target <- as.character(gt_aracne$Target)
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  gt_aracne$Regulator_gene[gt_aracne$Regulator_gene == i] <- NSL_list$Gene_symbol[loc]
+}
+```
+
+```{r}
+# Count number of hits for each NSL gene
+gt_aracne_summ <- dplyr::count(gt_aracne, Regulator_gene)
+gt_aracne_summ$Module <- as.character(gt_aracne_summ$Regulator_gene)
+gt_aracne_summ$MM <- as.character(gt_aracne_summ$Regulator_gene)
+# Add modules and memberships
+for (i in NSL_list$Gene_symbol) {
+  loc <- match(i, NSL_list$Gene_symbol)
+  gt_aracne_summ$Module[gt_aracne_summ$Module == i] <- NSL_list$GTEx_mod[loc]
+}
+for (i in NSL_list$Gene_symbol) {
+  loc <- match(i, NSL_list$Gene_symbol)
+  gt_aracne_summ$MM[gt_aracne_summ$MM == i] <- NSL_list$GTEx_MM[loc]
+}
+gt_aracne_summ$MM <- as.numeric(gt_aracne_summ$MM)
+names(gt_aracne_summ)[names(gt_aracne_summ)=="n"] <- "Number_targets"
+gt_aracne_summ <- gt_aracne_summ[,c(1,3,4,2)] %>%
+  dplyr::arrange(Number_targets)
+# Total number of targets for each NSL gene regulator
+gt_aracne_summ
+```
+
+Of interest were the NSL genes predicted to **regulate eachother**.
+```{r}
+# Filter for NSL genes as targets
+gt_NSL <- dplyr::filter(gt_aracne, Target %in% NSL_list$Ensembl_ID)
+# Add target gene symbols
+gt_NSL$Target_gene <- as.character(gt_NSL$Target)
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  gt_NSL$Target_gene[gt_NSL$Target_gene == i] <- NSL_list$Gene_symbol[loc]
+}
+# Display all NSL relationships
+dplyr::arrange(gt_NSL[, c(6,7,4,3,5)], desc(MI_quantile))
+```
+
+The **overlap** in regulons of the NSL genes was also examined. 
+```{r}
+# Remove unique targets
+gt_aracne_overlap <- gt_aracne[gt_aracne$Target %in% gt_aracne$Target[duplicated(gt_aracne$Target)],]
+```
+
+The total number of genes appearing in **>1 regulon** is **`r length(unique(gt_aracne_overlap$Target))`**.
+```{r}
+# Count number of shared targets for each NSL gene
+gt_aracne_summ2 <- dplyr::count(gt_aracne_overlap, Regulator_gene)
+names(gt_aracne_summ2)[names(gt_aracne_summ2)=="n"] <- "Shared_targets"
+gt_aracne_summ2 <- dplyr::left_join(gt_aracne_summ, gt_aracne_summ2, by = "Regulator_gene")
+gt_aracne_summ2[,c(1,4,5)]
+```
+
+The overlap in regulons was tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these genes shared a significant amount of their targets, suggesting one may be regulating the other.  
+```{r}
+# Make summary dataframe
+gt_aracne_nsltargets <- as.data.frame(matrix(nrow = 6, ncol = 6))
+colnames(gt_aracne_nsltargets) <- gt_aracne_summ$Regulator_gene
+rownames(gt_aracne_nsltargets) <- gt_aracne_summ$Regulator_gene
+# Perform Fishers test on NSL genes
+source(file.path(here::here("scripts", "ARACNe_functions.R")))
+for (i in colnames(gt_aracne_nsltargets)) {
+  for (j in rownames(gt_aracne_nsltargets)) {
+    pval <- fishers_test_targets(i, j, gt_aracne)
+    pval <- p.adjust(pval, method = "fdr")
+    gt_aracne_nsltargets[i,j] <- pval
+  }
+}
+```
+
+```{r}
+# Format for figure
+gt_aracne_nsltargets <- rownames_to_column(gt_aracne_nsltargets, var = "Regulon_1")
+gt_aracne_regulon <- tidyr::gather(gt_aracne_nsltargets, "Regulon_2", "p.val", -Regulon_1)
+gt_aracne_regulon$p.val <- as.numeric(gt_aracne_regulon$p.val)
+gt_aracne_regulon <- dplyr::filter(gt_aracne_regulon, Regulon_1 != Regulon_2)
+gt_aracne_regulon$`-log10(p.val)` <- -log10(gt_aracne_regulon$p.val)
+# Plot
+source(file.path(here::here("scripts", "CoExp_functions.R")))
+ggplot(gt_aracne_regulon, aes(Regulon_1, Regulon_2)) +
+  geom_tile(aes(fill = `-log10(p.val)`)) +
+  geom_text(aes(label = signif.num(p.val))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3") +
+  labs(y = "Regulon 1", x = "Regulon 2")
+```
+
+### NSL regulon
+Genes appearing in 3 or more of the regulons were focused on, termed the **NSL regulon**. 
+```{r}
+# Filter results for genes in 3+ regulons
+gt_regs_count <- gt_aracne %>%
+  dplyr::count(Target)
+gt_regs <- dplyr::left_join(gt_aracne, gt_regs_count, by = "Target")
+gt_3regs <- gt_regs %>%
+  dplyr::filter(n >=3)
+```
+
+The number of unique genes predicted to be regulated by 3 or more NSL complex genes is: `r nrow(unique(gt_3regs$Target))`.
+
+## 4.2. Gene set enrichment analysis {.tabset}
+### Individual regulons
+The appearance of each PD gene list in the regulons were tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these gene list appeared as targets for these two genes more often than would be expected by chance.
+```{r}
+# Make summary dataframe
+gt_NSLresults_test <- as.data.frame(matrix(nrow = 2, ncol = 6))
+colnames(gt_NSLresults_test) <- c("KAT8", "KANSL1", "OGT", "MCRS1", "HCFC1", "WDR5")
+rownames(gt_NSLresults_test) <- c("PD_mendelian", "PD_GWAS")
+# Perform Fishers tests for all columns
+gt_NSLresults_test[1,1] <- fishers_test_lists(c("KAT8"), PD_mendelian_ENSG, gt_aracne)
+gt_NSLresults_test[1,2] <- fishers_test_lists(c("KANSL1"), PD_mendelian_ENSG, gt_aracne)
+gt_NSLresults_test[1,3] <- fishers_test_lists(c("OGT"), PD_mendelian_ENSG, gt_aracne)
+gt_NSLresults_test[1,4] <- fishers_test_lists(c("MCRS1"), PD_mendelian_ENSG, gt_aracne)
+gt_NSLresults_test[1,5] <- fishers_test_lists(c("HCFC1"), PD_mendelian_ENSG, gt_aracne)
+gt_NSLresults_test[1,6] <- fishers_test_lists(c("WDR5"), PD_mendelian_ENSG, gt_aracne)
+gt_NSLresults_test[2,1] <- fishers_test_lists(c("KAT8"), PD_GWAS_ENSG, gt_aracne)
+gt_NSLresults_test[2,2] <- fishers_test_lists(c("KANSL1"), PD_GWAS_ENSG, gt_aracne)
+gt_NSLresults_test[2,3] <- fishers_test_lists(c("OGT"), PD_GWAS_ENSG, gt_aracne)
+gt_NSLresults_test[2,4] <- fishers_test_lists(c("MCRS1"), PD_GWAS_ENSG, gt_aracne)
+gt_NSLresults_test[2,5] <- fishers_test_lists(c("HCFC1"), PD_GWAS_ENSG, gt_aracne)
+gt_NSLresults_test[2,6] <- fishers_test_lists(c("WDR5"), PD_GWAS_ENSG, gt_aracne)
+# Show results
+gt_NSLresults_test
+```
+
+```{r}
+# Prep for figure
+fig_gt <- rownames_to_column(gt_NSLresults_test, var = "Gene_list")
+fig_gt <- tidyr::gather(fig_gt, "Gene", "p.val", 2:7)
+fig_gt$Gene_list <- as.character(fig_gt$Gene_list)
+fig_gt$Gene <- as.character(fig_gt$Gene)
+fig_gt$p.val <- as.numeric(fig_gt$p.val)
+fig_gt$FDR <- p.adjust(fig_gt$p.val, method = "fdr")
+fig_gt$`-log10(FDR)` <- -log10(fig_gt$FDR)
+# Plot
+ggplot(fig_gt, aes(Gene, Gene_list)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "red4") +
+  labs(y = "Gene list", x = "Gene")
+```
+
+### NSL regulon
+The NSL regulon was also filtered for genes linked to Mendelian PD.
+```{r}
+# Filter
+gt_3regs_mendPD <- gt_3regs %>%
+  dplyr::filter(Target %in% PD_mendelian_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  gt_3regs_mendPD$Target_gene[gt_3regs_mendPD$Target_gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Show results
+gt_3regs_mendPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(gt_3regs_mendPD$Target_gene))` different genes associated with Mendelian PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_mendelian_list$Ensembl_ID), gt_regs)
+```
+
+The NSL regulon was also filtered for genes linked to sporadic PD. 
+```{r}
+# Filter
+gt_3regs_gwasPD <- gt_3regs %>%
+  dplyr::filter(Target %in% PD_GWAS_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  gt_3regs_gwasPD$Target_gene[gt_3regs_gwasPD$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Show results
+gt_3regs_gwasPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(gt_3regs_gwasPD$Target_gene))` different genes associated with sporadic PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_GWAS_list$Ensembl_ID), gt_regs)
+```
+
+## 4.3. GO term enrichment analysis
+### Individual regulons
+Each regulon was examined for the **enrichment** of different gene ontology terms using `gProfiler`. 
+```{r, eval = FALSE}
+# Filter KANSL1 results
+gt_K1 <- dplyr::filter(gt_aracne, Regulator_gene == "KANSL1")
+gt_K1 <- as.character(gt_K1$Target)
+# Filter KAT8 results
+gt_K8 <- dplyr::filter(gt_aracne, Regulator_gene == "KAT8")
+gt_K8 <- as.character(gt_K8$Target)
+# Filter HCFC1 results
+gt_HC <- dplyr::filter(gt_aracne, Regulator_gene == "HCFC1")
+gt_HC <- as.character(gt_HC$Target)
+# Filter OGT results
+gt_OGT <- dplyr::filter(gt_aracne, Regulator_gene == "OGT")
+gt_OGT <- as.character(gt_OGT$Target)
+# Filter MCRS1 results
+gt_MC <- dplyr::filter(gt_aracne, Regulator_gene == "MCRS1")
+gt_MC <- as.character(gt_MC$Target)
+# Filter WDR5 results
+gt_WD <- dplyr::filter(gt_aracne, Regulator_gene == "WDR5")
+gt_WD <- as.character(gt_WD$Target)
+# Use gprofiler to search list of regulons
+regs_gt_gprof <- gost(query = list("KANSL1" = gt_K1, "KAT8" = gt_K8, "OGT" = gt_OGT, "MCRS1" = gt_MC, "HCFC1" = gt_HC, "WDR5" = gt_WD))
+regs_gt_gprof <- as.data.frame(regs_gt_gprof$result)
+regs_gt_gprof <- apply(regs_gt_gprof,2,as.character)
+write.csv(regs_gt_gprof, file.path(here::here("data", "ARACNe", "regs_gtex_gprof.csv")), row.names = FALSE)
+```
+
+First **GO: molecular function**:
+```{r, results = FALSE, warning = FALSE, message= FALSE}
+regs_gt_gprof <- read.csv(file.path(here::here("data", "ARACNe", "regs_gtex_gprof.csv")))
+# Molecular function
+regs_gt_MF <- regs_gt_gprof %>%
+  dplyr::filter(source == "GO:MF") %>%
+  dplyr::select(query, p_value, term_id, source, term_name)
+# Rename columns
+names(regs_gt_MF)[names(regs_gt_MF)=="query"] <- "gene_list"
+names(regs_gt_MF)[names(regs_gt_MF)=="term_id"] <- "go_id"
+names(regs_gt_MF)[names(regs_gt_MF)=="source"] <- "go_type"
+names(regs_gt_MF)[names(regs_gt_MF)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_gt_MF$p_value <- as.numeric(regs_gt_MF$p_value)
+regs_gt_MF$FDR <- p.adjust(regs_gt_MF$p_value, method="fdr")
+# GO reduce all terms to parent terms
+regs_gt_MF$go_type <- "MF"
+regs_gt_MF_GO <- go_reduce(pathway_df = regs_gt_MF, threshold = 0.7, scores = NULL)
+```
+
+Second **GO: cellular component**
+```{r, results = FALSE, warning = FALSE, message= FALSE}
+# Cellular component
+regs_gt_CC <- regs_gt_gprof %>%
+  dplyr::filter(source == "GO:CC") %>%
+  dplyr::select(query, p_value, term_id, source, term_name)
+# Rename columns
+names(regs_gt_CC)[names(regs_gt_CC)=="query"] <- "gene_list"
+names(regs_gt_CC)[names(regs_gt_CC)=="term_id"] <- "go_id"
+names(regs_gt_CC)[names(regs_gt_CC)=="source"] <- "go_type"
+names(regs_gt_CC)[names(regs_gt_CC)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_gt_CC$p_value <- as.numeric(regs_gt_CC$p_value)
+regs_gt_CC$FDR <- p.adjust(regs_gt_CC$p_value, method="fdr")
+# GO reduce all terms to parent terms
+regs_gt_CC$go_type <- "CC"
+regs_gt_CC_GO <- go_reduce(pathway_df = regs_gt_CC, threshold = 0.7, scores = NULL)
+```
+
+Third **GO: biological process**:
+```{r, results = FALSE, warning = FALSE, message= FALSE}
+# Biological process
+regs_gt_BP <- regs_gt_gprof %>%
+  dplyr::filter(source == "GO:BP") %>%
+  dplyr::select(query, p_value, term_id, source, term_name)
+# Rename columns
+names(regs_gt_BP)[names(regs_gt_BP)=="query"] <- "gene_list"
+names(regs_gt_BP)[names(regs_gt_BP)=="term_id"] <- "go_id"
+names(regs_gt_BP)[names(regs_gt_BP)=="source"] <- "go_type"
+names(regs_gt_BP)[names(regs_gt_BP)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_gt_BP$p_value <- as.numeric(regs_gt_BP$p_value)
+regs_gt_BP$FDR <- p.adjust(regs_gt_BP$p_value, method="fdr")
+# GO reduce all terms to parent terms
+regs_gt_BP$go_type <- "BP"
+regs_gt_BP_GO <- go_reduce(pathway_df = regs_gt_BP, threshold = 0.7, scores = NULL)
+```
+
+```{r}
+# Bind together and format
+regs_gt_GO <- dplyr::bind_rows(regs_gt_BP_GO, regs_gt_CC_GO, regs_gt_MF_GO)
+regs_gt_GO <- dplyr::filter(regs_gt_GO, parent_term != "NA")
+regs_gt_GO$go_type[regs_gt_GO$go_type=="BP"] <- "GO: BP"
+regs_gt_GO$go_type[regs_gt_GO$go_type=="MF"] <- "GO: MF"
+regs_gt_GO$go_type[regs_gt_GO$go_type=="CC"] <- "GO: CC"
+# GO figure
+ggplot2::ggplot(regs_gt_GO, aes(x = gene_list, y = parent_term)) + 
+  geom_point(size = 2, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4") +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Regulon", y = "") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+### NSL regulon
+The NSL regulon was was analysed in a similar way to the individual regulons. 
+```{r}
+# Filter results for genes in 3+ regulons
+gt_regs_count <- gt_aracne %>%
+  dplyr::count(Target)
+gt_regs <- dplyr::left_join(gt_aracne, gt_regs_count, by = "Target")
+gt_3regs <- gt_regs %>%
+  dplyr::filter(n >=3)
+```
+
+```{r, eval = FALSE}
+# Run gprofiler
+gt_3regs_gprof <- gprofiler2::gost(query = gt_3regs$Target)
+gt_3regs_gprof <- as.data.frame(gt_3regs_gprof$result)
+gt_3regs_gprof <- as.data.frame(apply(gt_3regs_gprof, 2, as.character))
+gt_3regs_gprof$FDR <- p.adjust(gt_3regs_gprof$p_value, method = "fdr")
+# save
+write.csv(gt_3regs_gprof, file.path(here::here("data", "ARACNe", "3regs_gtex_gprof.csv")), row.names = FALSE)
+```
+
+```{r}
+# Load
+gt_3regs_gprof <- read.csv(file.path(here::here("data", "ARACNe", "3regs_gtex_gprof.csv")))
+# Add intersection ratio
+gt_3regs_gprof <- gt_3regs_gprof %>%
+  dplyr::mutate(Ratio = intersection_size/term_size)
+```
+
+First **molecular function**:
+```{r, results = FALSE, message = FALSE}
+# Molecular function
+gt_3regs_MF <- gt_3regs_gprof %>%
+  dplyr::filter(source == "GO:MF" & FDR <= 0.05) %>%
+  dplyr::select(query, p_value, term_id, source, term_name, Ratio)
+# Rename columns
+names(gt_3regs_MF)[names(gt_3regs_MF)=="query"] <- "gene_list"
+names(gt_3regs_MF)[names(gt_3regs_MF)=="term_id"] <- "go_id"
+names(gt_3regs_MF)[names(gt_3regs_MF)=="source"] <- "go_type"
+names(gt_3regs_MF)[names(gt_3regs_MF)=="term_name"] <- "go_term"
+# FDR correct p values
+gt_3regs_MF$p_value <- as.numeric(gt_3regs_MF$p_value)
+gt_3regs_MF$FDR <- p.adjust(gt_3regs_MF$p_value, method="fdr")
+# GO reduce all terms to parent terms
+gt_3regs_MF$go_type <- "MF"
+gt_3regs_MF_GO <- go_reduce(pathway_df = gt_3regs_MF, threshold = 0.7, scores = NULL)
+```
+
+Second **cellular component**
+```{r, results = FALSE, message = FALSE}
+# Cellular component
+gt_3regs_CC <- gt_3regs_gprof %>%
+  dplyr::filter(source == "GO:CC" & FDR <= 0.05) %>%
+  dplyr::select(query, p_value, term_id, source, term_name, Ratio)
+# Rename columns
+names(gt_3regs_CC)[names(gt_3regs_CC)=="query"] <- "gene_list"
+names(gt_3regs_CC)[names(gt_3regs_CC)=="term_id"] <- "go_id"
+names(gt_3regs_CC)[names(gt_3regs_CC)=="source"] <- "go_type"
+names(gt_3regs_CC)[names(gt_3regs_CC)=="term_name"] <- "go_term"
+# FDR correct p values
+gt_3regs_CC$p_value <- as.numeric(gt_3regs_CC$p_value)
+gt_3regs_CC$FDR <- p.adjust(gt_3regs_CC$p_value, method="fdr")
+# GO reduce all terms to parent terms
+gt_3regs_CC$go_type <- "CC"
+gt_3regs_CC_GO <- go_reduce(pathway_df = gt_3regs_CC, threshold = 0.7, scores = NULL)
+```
+
+Third **biological process**:
+```{r, results = FALSE, message = FALSE}
+# Biological process
+gt_3regs_BP <- gt_3regs_gprof %>%
+  dplyr::filter(source == "GO:BP" & FDR <= 0.05) %>%
+  dplyr::select(query, p_value, term_id, source, term_name, Ratio)
+# Rename columns
+names(gt_3regs_BP)[names(gt_3regs_BP)=="query"] <- "gene_list"
+names(gt_3regs_BP)[names(gt_3regs_BP)=="term_id"] <- "go_id"
+names(gt_3regs_BP)[names(gt_3regs_BP)=="source"] <- "go_type"
+names(gt_3regs_BP)[names(gt_3regs_BP)=="term_name"] <- "go_term"
+# FDR correct p values
+gt_3regs_BP$p_value <- as.numeric(gt_3regs_BP$p_value)
+gt_3regs_BP$FDR <- p.adjust(gt_3regs_BP$p_value, method="fdr")
+# GO reduce all terms to parent terms
+gt_3regs_BP$go_type <- "BP"
+gt_3regs_BP_GO <- go_reduce(pathway_df = gt_3regs_BP, threshold = 0.7, scores = NULL)
+```
+
+```{r}
+# Bind together
+gt_3regs_GO <- dplyr::bind_rows(gt_3regs_BP_GO, gt_3regs_CC_GO, gt_3regs_MF_GO)
+# Format
+gt_3regs_GO <- dplyr::filter(gt_3regs_GO, parent_term != "NA")
+gt_3regs_GO$go_type[gt_3regs_GO$go_type=="BP"] <- "GO: BP"
+gt_3regs_GO$go_type[gt_3regs_GO$go_type=="MF"] <- "GO: MF"
+gt_3regs_GO$go_type[gt_3regs_GO$go_type=="CC"] <- "GO: CC"
+# Add reduced terms count and mean intersection ratio
+gt_3regs_GO_count <- gt_3regs_GO %>%
+  dplyr::count(parent_term)
+gt_3regs_GO <- gt_3regs_GO %>%
+  dplyr::left_join(gt_3regs_GO_count, by = "parent_term") %>%
+  dplyr::group_by(parent_term) %>%
+  dplyr::mutate(mean_ratio = mean(Ratio))
+```
+
+```{r}
+# Plot on bar chart
+gt_3regs_GO %>%
+  dplyr::arrange(FDR) %>%
+  dplyr::distinct(parent_term, .keep_all = TRUE) %>%
+  ggplot2::ggplot(aes(x = mean_ratio,
+                      y = reorder(parent_term, mean_ratio),
+                      fill = -log10(`FDR`))) +
+  geom_col() +
+  scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(y = "", x = "Mean intersection ratio") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+## 4.4. KEGG/reactome term entichment {.tabset}
+### Individual regulons
+Each regulon was also examined for the **enrichment** of different KEGG and reactome terms using `gProfiler`. These terms were then compared to a list of **46** terms **"nominated as potentially linked to PD risk through common genetic variation"** obtained from [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/). Firstly, as this list only contained terms from KEGG, Reactome and Pathway Interaction Database sources, the `gProfiler` results for each regulon were filtered for these sources and formatted. 
+```{r}
+# Filter for KEGG and REACTOME terms
+regs_gt_KGRE <- regs_gt_gprof %>%
+  dplyr::filter(source %in% c("KEGG", "REAC"))
+# Rename columns
+names(regs_gt_KGRE)[names(regs_gt_KGRE)=="query"] <- "gene_list"
+names(regs_gt_KGRE)[names(regs_gt_KGRE)=="term_id"] <- "go_id"
+names(regs_gt_KGRE)[names(regs_gt_KGRE)=="source"] <- "go_type"
+names(regs_gt_KGRE)[names(regs_gt_KGRE)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_gt_KGRE$p_value <- as.numeric(regs_gt_KGRE$p_value)
+regs_gt_KGRE$FDR <- p.adjust(regs_gt_KGRE$p_value, method="fdr")
+# Format list for comparing terms
+regs_gt_KGRE$col <- 1:nrow(regs_gt_KGRE)
+regs_gt_KGRE_comp <- dplyr::select(regs_gt_KGRE, col, go_term)
+```
+
+The table of **PD-linked terms** was then uploaded and formatted. 
+```{r, results = FALSE}
+# Upload table from paper
+pd_replication_tab1 <- read.csv(file.path(here::here("data", "pd_replication_tab1.txt")))
+# Format table from paper
+pd_replication_tab1$Set <- as.character(pd_replication_tab1$Gene_set)
+pd_replication_tab1$Set <- gsub(" (", "-", pd_replication_tab1$Set, fixed = TRUE)
+pd_replication_tab1$Set <- gsub(")", "", pd_replication_tab1$Set, fixed = TRUE)
+pd_replication_tab1 <- tidyr::separate(pd_replication_tab1, Set, c("Term", "Database"), "-")
+# Format for comparison
+pd_r <- pd_replication_tab1 %>%
+  dplyr::select(Term)
+pd_r$col <- 1:nrow(pd_r)
+```
+
+As the two lists of terms contained several of the same terms that were formatted slightly differently, they first needed to be checked for consistency and unified. This was done using `tidystringdist`. 
+```{r}
+# Combine lists
+list_compare_gt <- dplyr::union(regs_gt_KGRE_comp$go_term, pd_r$Term)
+list_compare_gt <- unique(list_compare_gt)
+# Find similar but not identical matches
+comparison_gt <- tidy_comb_all(list_compare_gt)
+comparison_gt <- tidy_stringdist(comparison_gt)
+comparison_gt <- dplyr::arrange(comparison_gt, V1)
+comparison_gt_1 <- comparison_gt %>%
+             dplyr::filter(osa < 10)
+# Go through by eye and remove rows with differing terms
+comparison_gt_1 <- comparison_gt_1 %>%
+  dplyr::slice(4,11,14,38,40,59)
+# Pick a format for the similar terms and replace in lists consistently
+regs_gt_KGRE$go_term[regs_gt_KGRE$go_term=="Asparagine N linked glycosylation"] <- "Asparagine N-linked glycosylation"
+regs_gt_KGRE$go_term[regs_gt_KGRE$go_term=="COPI mediated anterograde transport"] <- "COPI-mediated anterograde transport"
+regs_gt_KGRE$go_term[regs_gt_KGRE$go_term=="ER to GOLGI Anterograde Transport"] <- "ER to Golgi Anterograde Transport"
+regs_gt_KGRE$go_term[regs_gt_KGRE$go_term=="Parkinson disease"] <- "Parkinsons disease"
+regs_gt_KGRE$go_term[regs_gt_KGRE$go_term=="Post translational protein modification"] <- "Post-translational protein modification"
+regs_gt_KGRE$go_term[regs_gt_KGRE$go_term=="Transport to the GOLGI and subsequent modification"] <- "Transport to the Golgi and subsequent modification"
+pd_replication_tab1$Term[pd_replication_tab1$Term=="Asparagine N linked glycosylation"] <- "Asparagine N-linked glycosylation"
+pd_replication_tab1$Term[pd_replication_tab1$Term=="COPI mediated anterograde transport"] <- "COPI-mediated anterograde transport"
+pd_replication_tab1$Term[pd_replication_tab1$Term=="ER to GOLGI Anterograde Transport"] <- "ER to Golgi Anterograde Transport"
+pd_replication_tab1$Term[pd_replication_tab1$Term=="Parkinson disease"] <- "Parkinsons disease"
+pd_replication_tab1$Term[pd_replication_tab1$Term=="Post translational protein modification"] <- "Post-translational protein modification"
+pd_replication_tab1$Term[pd_replication_tab1$Term=="Transport to the GOLGI and subsequent modification"] <- "Transport to the Golgi and subsequent modification"
+```
+
+The list of terms enriched for each NSL regulon was then filtered for those linked to PD by [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/).
+```{r}
+# Filter ARACNe list for paper list
+all_terms_gt <- regs_gt_KGRE %>% 
+  dplyr::filter(go_term %in% pd_replication_tab1$Term) %>%
+  dplyr::select(gene_list, go_term, p_value, FDR, go_type) %>%
+  dplyr::arrange(go_term)
+all_terms_gt$go_type[all_terms_gt$go_type== "REAC"] <- "REACTOME"
+```
+
+```{r}
+ggplot2::ggplot(all_terms_gt, aes(x = gene_list, y = go_term)) + 
+  geom_point(size = 4, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4") +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Regulon", y = "") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+### NSL regulon
+The KEGG and reactome term enrichments for the list of genes appearing in **3 or more** regulons was also compared to this PD-linked list of terms. 
+```{r}
+# Filter for KEGG and REACTOME terms
+gt_3regs_KGRE <- gt_3regs_gprof %>%
+  dplyr::filter(source %in% c("KEGG", "REAC"))
+# Rename columns
+names(gt_3regs_KGRE)[names(gt_3regs_KGRE)=="query"] <- "gene_list"
+names(gt_3regs_KGRE)[names(gt_3regs_KGRE)=="term_id"] <- "go_id"
+names(gt_3regs_KGRE)[names(gt_3regs_KGRE)=="source"] <- "go_type"
+names(gt_3regs_KGRE)[names(gt_3regs_KGRE)=="term_name"] <- "go_term"
+# FDR correct p values
+gt_3regs_KGRE$p_value <- as.numeric(gt_3regs_KGRE$p_value)
+gt_3regs_KGRE$FDR <- p.adjust(gt_3regs_KGRE$p_value, method="fdr")
+# Format list for comparing terms
+gt_3regs_KGRE$col <- 1:nrow(gt_3regs_KGRE)
+gt_3regs_KGRE_comp <- dplyr::select(gt_3regs_KGRE, col, go_term)
+# Combine lists
+list_compare_gt_3regs <- dplyr::union(gt_3regs_KGRE_comp$go_term, pd_r$Term)
+list_compare_gt_3regs <- unique(list_compare_gt_3regs)
+# Find similar but not identical matches
+comparison_gt_3regs <- tidy_comb_all(list_compare_gt_3regs)
+comparison_gt_3regs <- tidy_stringdist(comparison_gt_3regs)
+comparison_gt_3regs <- dplyr::arrange(as.data.frame(comparison_gt_3regs), V1)
+comparison_gt_3regs_1 <- comparison_gt_3regs %>%
+             dplyr::filter(osa < 10)
+# Go through by eye and remove rows with differing terms
+comparison_gt_3regs_1 <- comparison_gt_3regs_1 %>%
+  dplyr::slice(-1,-2,-4,-6,-7,-8)
+# All required text changes have already been made in previous check step
+```
+
+```{r}
+# Filter ARACNe list for paper list
+all_terms_gt_3regs <- gt_3regs_KGRE %>% 
+  dplyr::filter(go_term %in% pd_replication_tab1$Term) %>%
+  dplyr::arrange(go_term) %>%
+  dplyr::mutate(Ratio = intersection_size/term_size)
+all_terms_gt_3regs$go_type[all_terms_gt_3regs$go_type== "REAC"] <- "REACTOME"
+```
+
+```{r}
+# Plot as bar chart
+all_terms_gt_3regs %>%
+  dplyr::arrange(FDR) %>%
+  ggplot2::ggplot(aes(x = Ratio,
+                      y = reorder(go_term, Ratio),
+                      fill = -log10(`FDR`))) +
+  geom_col() +
+  scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  theme(strip.text.y = element_text(angle = 0))+
+  labs(y = "", x = "Intersection ratio") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+# 5. UKBEC results 
+## 5.1. Characteristics {.tabset}
+### Individual regulons
+The function returned a total of **`r nrow(uk_aracne)`** possible regulatory relationships involving the NSL genes within the `black` module.
+```{r}
+# Add MI quantile to result
+uk_aracne$MI_quantile <- ecdf(uk_aracne$MI)(uk_aracne$MI)
+# Add gene symbols to results table
+uk_aracne$Regulator_gene <- as.character(uk_aracne$Regulator)
+uk_aracne$Target_gene <- as.character(uk_aracne$Target)
+for (i in NSL_list$UKBEC_id) {
+  loc <- match(i, NSL_list$UKBEC_id)
+  uk_aracne$Regulator_gene[uk_aracne$Regulator_gene == i] <- NSL_list$Gene_symbol[loc]
+}
+for (i in trans.table$XtID) {
+  loc <- match(i, trans.table$XtID)
+  uk_aracne$Target_gene[uk_aracne$Target_gene == i] <- trans.table$Gene_Symbol[loc]
+}
+```
+
+```{r}
+# Count number of hits for each NSL gene
+uk_aracne_summ <- dplyr::count(uk_aracne, Regulator_gene)
+uk_aracne_summ$Regulator_gene <- as.character(uk_aracne_summ$Regulator_gene)
+uk_aracne_summ$Module <- uk_aracne_summ$Regulator_gene
+uk_aracne_summ$MM <- uk_aracne_summ$Regulator_gene
+# Add modules and memberships
+for (i in NSL_list$Gene_symbol) {
+  loc <- match(i, NSL_list$Gene_symbol)
+  uk_aracne_summ$Module[uk_aracne_summ$Module == i] <- NSL_list$UKBEC_mod[loc]
+}
+for (i in NSL_list$Gene_symbol) {
+  loc <- match(i, NSL_list$Gene_symbol)
+  uk_aracne_summ$MM[uk_aracne_summ$MM == i] <- NSL_list$UKBEC_MM[loc]
+}
+uk_aracne_summ$MM <- as.numeric(uk_aracne_summ$MM)
+names(uk_aracne_summ)[names(uk_aracne_summ)=="n"] <- "Number_targets"
+uk_aracne_summ <- uk_aracne_summ %>%
+  dplyr::arrange(Number_targets)
+# Total number of targets for each NSL gene regulator
+uk_aracne_summ[,c(1,3,4,2)]
+```
+
+Of interest were the NSL genes predicted to **regulate eachother**.
+```{r}
+# Filter for NSL genes as targets
+uk_aracne_NSL <- dplyr::filter(uk_aracne, Target_gene %in% NSL_list$UKBEC)
+# Display all NSL relationships
+dplyr::arrange(uk_aracne_NSL[, c(6,7,4,3,5)], desc(MI_quantile))
+```
+
+The **overlap** in the targets of NSL gene regulation was also examined. 
+```{r}
+# Remove unique targets
+uk_aracne_overlap <- uk_aracne[uk_aracne$Target %in% uk_aracne$Target[duplicated(uk_aracne$Target)],]
+```
+
+The total number of genes appearing as targets for >1 NSL gene is **`r length(unique(uk_aracne_overlap$Target))`**. 
+```{r}
+# Count number of shared targets for each NSL gene
+uk_aracne_summ2 <- dplyr::count(uk_aracne_overlap, Regulator_gene)
+names(uk_aracne_summ2)[names(uk_aracne_summ2)=="n"] <- "Shared_targets"
+uk_aracne_summ2 <- dplyr::left_join(uk_aracne_summ, uk_aracne_summ2, by = "Regulator_gene")
+uk_aracne_summ2[,c(1,2,5)]
+```
+
+The overlap in targets between NSL genes was tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these genes shared a significant amount of their targets, suggesting one may be regulating the other.  
+```{r}
+# Make summary dataframe
+uk_aracne_nsltargets <- as.data.frame(matrix(nrow = 4, ncol = 4))
+colnames(uk_aracne_nsltargets) <- uk_aracne_summ$Regulator_gene
+rownames(uk_aracne_nsltargets) <- uk_aracne_summ$Regulator_gene
+# Perform Fishers test on NSL genes
+for (i in colnames(uk_aracne_nsltargets)) {
+  for (j in rownames(uk_aracne_nsltargets)) {
+    pval <- fishers_test_targets(i, j, uk_aracne)
+    pval <- format(round(pval, digits = 7), scientific = FALSE)
+    uk_aracne_nsltargets[i,j] <- pval
+  }
+}
+uk_aracne_nsltargets
+```
+
+```{r}
+# Format for figure
+uk_aracne_nsltargets <- rownames_to_column(uk_aracne_nsltargets, var = "Regulon_1")
+uk_aracne_regulon <- tidyr::gather(uk_aracne_nsltargets, "Regulon_2", "p.val", -Regulon_1)
+uk_aracne_regulon$p.val <- as.numeric(uk_aracne_regulon$p.val)
+uk_aracne_regulon <- dplyr::filter(uk_aracne_regulon, Regulon_1 != Regulon_2)
+uk_aracne_regulon$`-log10(p.val)` <- -log10(uk_aracne_regulon$p.val)
+# Plot
+ggplot(gt_aracne_regulon, aes(Regulon_1, Regulon_2)) +
+  geom_tile(aes(fill = `-log10(p.val)`)) +
+  geom_text(aes(label = signif.num(p.val))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3") +
+  labs(y = "Regulon 1", x = "Regulon 2")
+```
+
+### NSL regulon
+Genes appearing in 3 or more of the regulons were focused on, termed the **NSL regulon**. 
+```{r}
+# Filter results for genes in 3+ regulons
+uk_regs_count <- uk_aracne %>%
+  dplyr::count(Target)
+uk_regs <- dplyr::left_join(uk_aracne, uk_regs_count, by = "Target")
+uk_3regs <- uk_regs %>%
+  dplyr::filter(n >=3)
+```
+
+The number of unique genes predicted to be regulated by 3 or more NSL complex genes is: `r nrow(unique(uk_3regs$Target))`.
+
+## 5.2. Gene set enrichment analysis {.tabset}
+### Individual regulons
+```{r}
+# Add columns with UKBEC IDs to gene list
+PD_mendelian_list$UKBEC <- as.character(PD_mendelian_list$Gene_symbol)
+PD_mendelian_list$UKBEC[PD_mendelian_list$UKBEC=="PRKN"] <- "PARK2"
+PD_mendelian_list$UKBEC_id <- as.character(PD_mendelian_list$UKBEC)
+for (i in trans.table$Gene_Symbol) {
+  loc <- match(i, trans.table$Gene_Symbol)
+  PD_mendelian_list$UKBEC_id[PD_mendelian_list$UKBEC_id == i] <- trans.table$XtID[loc]
+}
+# Black module results
+uk_aracne_PDmend <- uk_aracne %>%
+  dplyr::filter(Target_gene %in% PD_mendelian_list$UKBEC)
+```
+
+```{r}
+# Add columns with UKBEC IDs to gene list
+PD_GWAS_list$UKBEC <- as.character(PD_GWAS_list$Gene_symbol)
+PD_GWAS_list$UKBEC[PD_GWAS_list$UKBEC=="CCAR2"] <- "KIAA1967"
+PD_GWAS_list$UKBEC[PD_GWAS_list$UKBEC=="KLHL7-DT"] <- "KLHL7-AS1"
+PD_GWAS_list$UKBEC[PD_GWAS_list$UKBEC=="RAB29"] <- "RAB7L1"
+PD_GWAS_list$UKBEC[PD_GWAS_list$UKBEC=="RETREG3"] <- "FAM134C"
+PD_GWAS_list$UKBEC[PD_GWAS_list$UKBEc=="SGF29"] <- "CCDC101"
+PD_GWAS_list$UKBEC_id <- as.character(PD_GWAS_list$UKBEC)
+for (i in trans.table$Gene_Symbol) {
+  loc <- match(i, trans.table$Gene_Symbol)
+  PD_GWAS_list$UKBEC_id[PD_GWAS_list$UKBEC_id == i] <- trans.table$XtID[loc]
+}
+# Black module results
+uk_aracne_GWAS <- uk_aracne %>%
+  dplyr::filter(Target_gene %in% PD_GWAS_list$UKBEC)
+```
+
+The appearance of each gene list in the results for the remaining NSL genes within the **black** module were tested for significance using a **Fishers exact test**. If the overlap p-value **<0.05**, this meant these gene list appeared as targets for these two genes more often than would be expected by chance. 
+```{r}
+# Make summary dataframe
+uk_aracne_NSLresults_test <- as.data.frame(matrix(nrow = 2, ncol = 4))
+colnames(uk_aracne_NSLresults_test) <- c("KAT8", "KANSL1", "HCFC1", "MCRS1")
+rownames(uk_aracne_NSLresults_test) <- c("PD_mendelian", "PD_GWAS")
+# Perform Fishers tests for first 3 columns
+uk_aracne_NSLresults_test[1,1] <- fishers_test_lists(c("KAT8"), PD_mendelian_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[1,2] <- fishers_test_lists(c("KANSL1"), PD_mendelian_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[1,3] <- fishers_test_lists(c("HCFC1"), PD_mendelian_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[1,4] <- fishers_test_lists(c("MCRS1"), PD_mendelian_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[2,1] <- fishers_test_lists(c("KAT8"), PD_GWAS_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[2,2] <- fishers_test_lists(c("KANSL1"), PD_GWAS_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[2,3] <- fishers_test_lists(c("HCFC1"), PD_GWAS_list$UKBEC_id, uk_aracne)
+uk_aracne_NSLresults_test[2,4] <- fishers_test_lists(c("MCRS1"), PD_GWAS_list$UKBEC_id, uk_aracne)
+# Show results
+uk_aracne_NSLresults_test
+```
+
+```{r}
+# Prep for figure
+fig_UK <- rownames_to_column(uk_aracne_NSLresults_test, var = "Gene_list")
+fig_UK <- tidyr::gather(fig_UK, "Gene", "p.val", 2:5)
+fig_UK$Gene_list <- as.character(fig_UK$Gene_list)
+fig_UK$Gene <- as.character(fig_UK$Gene)
+fig_UK$p.val <- as.numeric(fig_UK$p.val)
+fig_UK$FDR <- p.adjust(fig_UK$p.val, method = "fdr")
+fig_UK$`-log10(FDR)` <- -log10(fig_UK$FDR)
+# Plot
+ggplot(fig_UK, aes(Gene, Gene_list)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "red4") +
+  labs(y = "Gene list", x = "Gene")
+```
+
+### NSL regulon
+The NSL regulon was also filtered for genes linked to Mendelian PD.
+```{r}
+# Filter
+uk_3regs_mendPD <- uk_3regs %>%
+  dplyr::filter(Target %in% PD_mendelian_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  uk_3regs_mendPD$Target_gene[uk_3regs_mendPD$Target_gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Show results
+uk_3regs_mendPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(uk_3regs_mendPD$Target_gene))` different genes associated with Mendelian PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_mendelian_list$Ensembl_ID), uk_regs)
+```
+
+The NSL regulon was also filtered for genes linked to sporadic PD. 
+```{r}
+# Filter
+uk_3regs_gwasPD <- uk_3regs %>%
+  dplyr::filter(Target %in% PD_GWAS_list$Ensembl_ID) %>%
+  dplyr::mutate(Target_gene = as.character(Target))
+# Add target gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  uk_3regs_gwasPD$Target_gene[uk_3regs_gwasPD$Target_gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Show results
+uk_3regs_gwasPD %>%
+  dplyr::select(Regulator_gene, Target_gene, MI, MI_quantile)
+```
+
+`r length(unique(uk_3regs_gwasPD$Target_gene))` different genes associated with sporadic PD were present in the NSL regulon. This was tested for significance using a **Fishers exact test**.
+```{r}
+fishers_test_lists2(c(3,4,5,6), c(PD_GWAS_list$Ensembl_ID), uk_regs)
+```
+
+## 5.3. GO term enrichment analysis {.tabset}
+### Individual regulons
+Each regulon was then examined for the **enrichment** of different **gene ontology terms** using `gProfiler`. 
+```{r, eval = FALSE}
+# Filter KANSL1 results
+uk_K1 <- dplyr::filter(uk_aracne, Regulator_gene == "KANSL1")
+uk_K1 <- as.character(uk_K1$Target_gene)
+# Filter KAT8 results
+uk_K8 <- dplyr::filter(uk_aracne, Regulator_gene == "KAT8")
+uk_K8 <- as.character(uk_K8$Target_gene)
+# Filter HCFC1 results
+uk_HC <- dplyr::filter(uk_aracne, Regulator_gene == "HCFC1")
+uk_HC <- as.character(uk_HC$Target_gene)
+# Filter MCRS1 results
+uk_MC <- dplyr::filter(uk_aracne, Regulator_gene == "MCRS1")
+uk_MC <- as.character(uk_MC$Target_gene)
+# Use gprofiler to search list of regulons
+regs_uk_gprof <- gost(query = list("KANSL1" = uk_K1, "KAT8" = uk_K8, "MCRS1" = uk_MC, "HCFC1" = uk_HC))
+regs_uk_gprof <- as.data.frame(regs_uk_gprof$result)
+regs_uk_gprof <- apply(regs_uk_gprof,2,as.character)
+write.csv(regs_uk_gprof, file.path(here::here("data", "ARACNe", "regs_ukbec_gprof.csv")), row.names = FALSE)
+```
+
+First **GO: molecular function**:
+```{r, results = FALSE, message = FALSE}
+regs_uk_gprof <- read.csv(file.path(here::here("data", "ARACNe", "regs_ukbec_gprof.csv")))
+# Molecular function
+regs_uk_MF <- regs_uk_gprof %>%
+  dplyr::filter(source == "GO:MF") %>%
+  dplyr::select(query, p_value, term_id, source, term_name)
+# Rename columns
+names(regs_uk_MF)[names(regs_uk_MF)=="query"] <- "gene_list"
+names(regs_uk_MF)[names(regs_uk_MF)=="term_id"] <- "go_id"
+names(regs_uk_MF)[names(regs_uk_MF)=="source"] <- "go_type"
+names(regs_uk_MF)[names(regs_uk_MF)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_uk_MF$p_value <- as.numeric(regs_uk_MF$p_value)
+regs_uk_MF$FDR <- p.adjust(regs_uk_MF$p_value, method="fdr")
+# GO reduce all terms to parent terms
+regs_uk_MF$go_type <- "MF"
+regs_uk_MF_GO <- go_reduce(pathway_df = regs_uk_MF, threshold = 0.7, scores = NULL)
+```
+
+Second **GO: cellular component**:
+```{r, results = FALSE, message = FALSE}
+# Cellular component
+regs_uk_CC <- regs_uk_gprof %>%
+  dplyr::filter(source == "GO:CC") %>%
+  dplyr::select(query, p_value, term_id, source, term_name)
+# Rename columns
+names(regs_uk_CC)[names(regs_uk_CC)=="query"] <- "gene_list"
+names(regs_uk_CC)[names(regs_uk_CC)=="term_id"] <- "go_id"
+names(regs_uk_CC)[names(regs_uk_CC)=="source"] <- "go_type"
+names(regs_uk_CC)[names(regs_uk_CC)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_uk_CC$p_value <- as.numeric(regs_uk_CC$p_value)
+regs_uk_CC$FDR <- p.adjust(regs_uk_CC$p_value, method="fdr")
+# GO reduce all terms to parent terms
+regs_uk_CC$go_type <- "CC"
+regs_uk_CC_GO <- go_reduce(pathway_df = regs_uk_CC, threshold = 0.7, scores = NULL)
+```
+
+Third **GO: biological process**:
+```{r, results = FALSE, message = FALSE}
+# Biological process
+regs_uk_BP <- regs_uk_gprof %>%
+  dplyr::filter(source == "GO:BP") %>%
+  dplyr::select(query, p_value, term_id, source, term_name)
+# Rename columns
+names(regs_uk_BP)[names(regs_uk_BP)=="query"] <- "gene_list"
+names(regs_uk_BP)[names(regs_uk_BP)=="term_id"] <- "go_id"
+names(regs_uk_BP)[names(regs_uk_BP)=="source"] <- "go_type"
+names(regs_uk_BP)[names(regs_uk_BP)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_uk_BP$p_value <- as.numeric(regs_uk_BP$p_value)
+regs_uk_BP$FDR <- p.adjust(regs_uk_BP$p_value, method="fdr")
+# GO reduce all terms to parent terms
+regs_uk_BP$go_type <- "BP"
+regs_uk_BP_GO <- go_reduce(pathway_df = regs_uk_BP, threshold = 0.7, scores = NULL)
+```
+
+```{r}
+# Bind together and format
+regs_uk_GO <- dplyr::bind_rows(regs_uk_BP_GO, regs_uk_CC_GO, regs_uk_MF_GO)
+regs_uk_GO <- dplyr::filter(regs_uk_GO, parent_term != "NA")
+regs_uk_GO$go_type[regs_uk_GO$go_type=="BP"] <- "GO: BP"
+regs_uk_GO$go_type[regs_uk_GO$go_type=="MF"] <- "GO: MF"
+regs_uk_GO$go_type[regs_uk_GO$go_type=="CC"] <- "GO: CC"
+# GO figure
+ggplot2::ggplot(regs_uk_GO, aes(x = gene_list, y = parent_term)) + 
+  geom_point(size = 3, aes(colour = -log10(`FDR`))) +
+  scale_color_continuous(low = "lightgoldenrod", high = "red4") +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(x = "Regulon", y = "") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+### NSL regulon
+The NSL regulon was analysed in a similar way to the individual regulons. 
+```{r, eval = FALSE}
+# Run gprofiler
+uk_3regs_gprof <- gprofiler2::gost(query = uk_3regs$Target_gene)
+uk_3regs_gprof <- as.data.frame(uk_3regs_gprof$result)
+uk_3regs_gprof <- as.data.frame(apply(uk_3regs_gprof, 2, as.character))
+uk_3regs_gprof$FDR <- p.adjust(uk_3regs_gprof$p_value, method = "fdr")
+# save
+write.csv(uk_3regs_gprof, file.path(here::here("data", "ARACNe", "3regs_ukbec_gprof.csv")), row.names = FALSE)
+```
+
+```{r}
+# Load
+uk_3regs_gprof <- read.csv(file.path(here::here("data", "ARACNe", "3regs_ukbec_gprof.csv")))
+# Add intersection ratio
+uk_3regs_gprof <- uk_3regs_gprof %>%
+  dplyr::mutate(Ratio = intersection_size/term_size)
+```
+
+First **molecular function**:
+```{r, results = FALSE, message = FALSE}
+# Molecular function
+uk_3regs_MF <- uk_3regs_gprof %>%
+  dplyr::filter(source == "GO:MF" & FDR <= 0.05) %>%
+  dplyr::select(query, p_value, term_id, source, term_name, Ratio)
+# Rename columns
+names(uk_3regs_MF)[names(uk_3regs_MF)=="query"] <- "gene_list"
+names(uk_3regs_MF)[names(uk_3regs_MF)=="term_id"] <- "go_id"
+names(uk_3regs_MF)[names(uk_3regs_MF)=="source"] <- "go_type"
+names(uk_3regs_MF)[names(uk_3regs_MF)=="term_name"] <- "go_term"
+# FDR correct p values
+uk_3regs_MF$p_value <- as.numeric(uk_3regs_MF$p_value)
+uk_3regs_MF$FDR <- p.adjust(uk_3regs_MF$p_value, method="fdr")
+# GO reduce all terms to parent terms
+uk_3regs_MF$go_type <- "MF"
+uk_3regs_MF_GO <- go_reduce(pathway_df = uk_3regs_MF, threshold = 0.7, scores = NULL)
+```
+
+Second **cellular component**
+```{r, results = FALSE, message = FALSE}
+# Cellular component
+uk_3regs_CC <- uk_3regs_gprof %>%
+  dplyr::filter(source == "GO:CC" & FDR <= 0.05) %>%
+  dplyr::select(query, p_value, term_id, source, term_name, Ratio)
+# Rename columns
+names(uk_3regs_CC)[names(uk_3regs_CC)=="query"] <- "gene_list"
+names(uk_3regs_CC)[names(uk_3regs_CC)=="term_id"] <- "go_id"
+names(uk_3regs_CC)[names(uk_3regs_CC)=="source"] <- "go_type"
+names(uk_3regs_CC)[names(uk_3regs_CC)=="term_name"] <- "go_term"
+# FDR correct p values
+uk_3regs_CC$p_value <- as.numeric(uk_3regs_CC$p_value)
+uk_3regs_CC$FDR <- p.adjust(uk_3regs_CC$p_value, method="fdr")
+# GO reduce all terms to parent terms
+uk_3regs_CC$go_type <- "CC"
+uk_3regs_CC_GO <- go_reduce(pathway_df = uk_3regs_CC, threshold = 0.7, scores = NULL)
+```
+
+Third **biological process**:
+```{r, results = FALSE, message = FALSE}
+# Biological process
+uk_3regs_BP <- uk_3regs_gprof %>%
+  dplyr::filter(source == "GO:BP" & FDR <= 0.05) %>%
+  dplyr::select(query, p_value, term_id, source, term_name, Ratio)
+# Rename columns
+names(uk_3regs_BP)[names(uk_3regs_BP)=="query"] <- "gene_list"
+names(uk_3regs_BP)[names(uk_3regs_BP)=="term_id"] <- "go_id"
+names(uk_3regs_BP)[names(uk_3regs_BP)=="source"] <- "go_type"
+names(uk_3regs_BP)[names(uk_3regs_BP)=="term_name"] <- "go_term"
+# FDR correct p values
+uk_3regs_BP$p_value <- as.numeric(uk_3regs_BP$p_value)
+uk_3regs_BP$FDR <- p.adjust(uk_3regs_BP$p_value, method="fdr")
+# GO reduce all terms to parent terms
+uk_3regs_BP$go_type <- "BP"
+uk_3regs_BP_GO <- go_reduce(pathway_df = uk_3regs_BP, threshold = 0.7, scores = NULL)
+```
+
+```{r}
+# Bind together
+uk_3regs_GO <- dplyr::bind_rows(uk_3regs_BP_GO, uk_3regs_CC_GO, uk_3regs_MF_GO)
+# Format
+uk_3regs_GO <- dplyr::filter(uk_3regs_GO, parent_term != "NA")
+uk_3regs_GO$go_type[uk_3regs_GO$go_type=="BP"] <- "GO: BP"
+uk_3regs_GO$go_type[uk_3regs_GO$go_type=="MF"] <- "GO: MF"
+uk_3regs_GO$go_type[uk_3regs_GO$go_type=="CC"] <- "GO: CC"
+# Add reduced terms count and mean intersection ratio
+uk_3regs_GO_count <- uk_3regs_GO %>%
+  dplyr::count(parent_term)
+uk_3regs_GO <- uk_3regs_GO %>%
+  dplyr::left_join(uk_3regs_GO_count, by = "parent_term") %>%
+  dplyr::group_by(parent_term) %>%
+  dplyr::mutate(mean_ratio = mean(Ratio))
+```
+
+```{r}
+# Plot on bar chart
+uk_3regs_GO %>%
+  dplyr::arrange(FDR) %>%
+  dplyr::distinct(parent_term, .keep_all = TRUE) %>%
+  ggplot2::ggplot(aes(x = mean_ratio,
+                      y = reorder(parent_term, mean_ratio),
+                      fill = -log10(`FDR`))) +
+  geom_col() +
+  scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
+  facet_grid(go_type ~., scales = "free", space = "free") +
+  labs(y = "", x = "Mean intersection ratio") +
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.y = element_text(angle = 90, size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+## 5.4. KEGG/reactome term enrichment analysis {.tabset}
+### Individual regulons 
+These terms were then compared to the list if PD-linked terms from [Bandres-Ciga et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8096770/). Firstly, as this list only contained terms from KEGG, Reactome and Pathway Interaction Database sources, the `gProfiler` results for each regulon were filtered for these sources and formatted. 
+```{r}
+# Filter for KEGG and REACTOME terms
+regs_uk_KGRE <- regs_uk_gprof %>%
+  dplyr::filter(source %in% c("KEGG", "REAC"))
+# Rename columns
+names(regs_uk_KGRE)[names(regs_uk_KGRE)=="query"] <- "gene_list"
+names(regs_uk_KGRE)[names(regs_uk_KGRE)=="term_id"] <- "go_id"
+names(regs_uk_KGRE)[names(regs_uk_KGRE)=="source"] <- "go_type"
+names(regs_uk_KGRE)[names(regs_uk_KGRE)=="term_name"] <- "go_term"
+# FDR correct p values
+regs_uk_KGRE$p_value <- as.numeric(regs_uk_KGRE$p_value)
+regs_uk_KGRE$FDR <- p.adjust(regs_uk_KGRE$p_value, method="fdr")
+# Format list for comparing terms
+regs_uk_KGRE$col <- 1:nrow(regs_uk_KGRE)
+regs_uk_KGRE_comp <- dplyr::select(regs_uk_KGRE, col, go_term)
+```
+
+The table of **PD-linked terms** was again checked for consistency with the regulon enriched terms. This was done using `tidystringdist`. 
+```{r}
+# Combine lists
+list_compare_uk <- dplyr::union(regs_uk_KGRE_comp$go_term, pd_r$Term)
+list_compare_uk <- unique(list_compare_uk)
+# Find similar but not identical matches
+comparison_uk <- tidy_comb_all(list_compare_uk)
+comparison_uk <- tidy_stringdist(comparison_uk)
+comparison_uk <- dplyr::arrange(comparison_uk, V1)
+comparison_uk_1 <- comparison_uk %>%
+             dplyr::filter(osa < 10)
+# Go through by eye- no terms were comparable so list can be filtered as is
+```
+
+The list of terms enriched for each NSL regulon was then filtered for the PD-linked terms. 
+```{r}
+# Filter ARACNe list for paper list
+all_terms_uk <- regs_uk_KGRE %>% 
+  dplyr::filter(go_term %in% pd_replication_tab1$Term) %>%
+  dplyr::select(gene_list, go_term, p_value, FDR, go_type) %>%
+  dplyr::arrange(go_term)
+``` 
+
+**No terms** were found to be common between the two lists.  
+
+### NSL regulon
+The KEGG and reactome term enrichments for the NSL regulon was also compared to this PD-linked list of terms. 
+```{r}
+# Filter for KEGG and REACTOME terms
+uk_3regs_KGRE <- uk_3regs_gprof %>%
+  dplyr::filter(source %in% c("KEGG", "REAC"))
+# Rename columns
+names(uk_3regs_KGRE)[names(uk_3regs_KGRE)=="query"] <- "gene_list"
+names(uk_3regs_KGRE)[names(uk_3regs_KGRE)=="term_id"] <- "go_id"
+names(uk_3regs_KGRE)[names(uk_3regs_KGRE)=="source"] <- "go_type"
+names(uk_3regs_KGRE)[names(uk_3regs_KGRE)=="term_name"] <- "go_term"
+# FDR correct p values
+uk_3regs_KGRE$p_value <- as.numeric(uk_3regs_KGRE$p_value)
+uk_3regs_KGRE$FDR <- p.adjust(uk_3regs_KGRE$p_value, method="fdr")
+# Format list for comparing terms
+uk_3regs_KGRE$col <- 1:nrow(uk_3regs_KGRE)
+uk_3regs_KGRE_comp <- dplyr::select(uk_3regs_KGRE, col, go_term)
+# Combine lists
+list_compare_uk_3regs <- dplyr::union(uk_3regs_KGRE_comp$go_term, pd_r$Term)
+list_compare_uk_3regs <- unique(list_compare_uk_3regs)
+# Find similar but not identical matches
+comparison_uk_3regs <- tidy_comb_all(list_compare_uk_3regs)
+comparison_uk_3regs <- tidy_stringdist(comparison_uk_3regs)
+comparison_uk_3regs <- dplyr::arrange(as.data.frame(comparison_uk_3regs), V1)
+comparison_uk_3regs_1 <- comparison_uk_3regs %>%
+             dplyr::filter(osa < 10)
+# Go through by eye- no terms were comparable so list can be filtered as is
+```
+
+The list of terms enriched for each NSL regulon was then filtered for the PD-linked terms
+```{r}
+# Filter ARACNe list for paper list
+all_terms_uk_3regs <- uk_3regs_KGRE %>% 
+  dplyr::filter(go_term %in% pd_replication_tab1$Term) %>%
+  dplyr::arrange(go_term) %>%
+  dplyr::mutate(Ratio = intersection_size/term_size)
+```
+
+**No terms** were found to be common between the two lists.  
