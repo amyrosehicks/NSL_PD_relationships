@@ -1,0 +1,1547 @@
+---
+title: "Sec_GCN_gtex"
+author: "Amy Hicks"
+date: "16/12/2021"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(devtools)
+library(CoExpNets)
+library(CoExpGTEx)
+library(stringr)
+library(corrplot)
+library(biomaRt)
+library(knitr)
+library(readxl)
+library(gprofiler2)
+library(rmarkdown)
+library(rutils)
+library(GMSCA)
+library(here)
+```
+
+This markdown contains an exploration of the secondary coexpression networks from [Sanchez et al., 2021](https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/btab175/6178279). Four networks were created from frontal cortex tissue data from the **GTEx dataset** and categorised by the correction or **removal of the effect** of specific cell types, namely **neurons, mature astrocytes, microglia** and **oligodendrocytes**. Several lists of genes of interest were searched within these networks to investigate the effect of cell type on gene co-expression relationships.
+
+```{r, results = FALSE}
+# First initialise the datasets/packages to use
+CoExpGTEx::initDb(mandatory = T)
+```
+
+# 1. Gene lists of interest
+## 1.1. NSL complex genes
+Firstly, the nine genes encoding the NSL complex will be focused on [(Sheikh et al., 2019)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6607013/). These genes encode proteins which make up an **acetyltransferase complex** linked to both nuclear and mitochondrial gene expression.
+```{r}
+# Load list
+NSL_list <- read.delim(file.path(here::here("data", "Gene_lists", "NSL_list.txt")))
+# Make gene/ENSG lists
+NSL_genes <- as.character(NSL_list$Gene_symbol)
+NSL_ENSG <- as.character(NSL_list$Ensembl_ID)
+```
+
+The number of genes in this list: **`r nrow(NSL_list)`**.
+
+## 1.2. PD mendelian
+A lis1t of highly penetrant genes linked to familial forms of Parkinson's disease was obtained from PanelApp [Parkinson disease and complex Parkinsonism version 1.68](https://panelapp.genomicsengland.co.uk/panels/39/), a list collected and validated by a group of experts.
+```{r}
+# Load list
+PD_mendelian_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_mendelian_list.txt")))
+# Make gene/ENSG lists
+PD_mendelian_genes <- as.character(PD_mendelian_list$Gene_symbol)
+PD_mendelian_ENSG <- as.character(PD_mendelian_list$Ensembl_ID)
+```
+
+The number of genes in this list: **`r nrow(PD_mendelian_list)`**.
+
+## 1.3. PD sporadic
+A list of less penetrant, more common genes linked to sporadic Parkinson's disease  was obtained from the [latest GWAS](https://www.thelancet.com/journals/laneur/article/PIIS1474-4422(19)30320-5/fulltext), described as *"Of the genes possibly associated with at least one QTL in public reference datasets and  therefore testable via summary-based Mendelian randomisation, the expression or methylation of 64% was significantly associated with a possible causal change in Parkinson's disease risk."*
+```{r}
+# Load list
+PD_GWAS_list <- read.delim(file.path(here::here("data", "Gene_lists", "PD_GWAS_list.txt")))
+# Make gene/ENSG lists
+PD_GWAS_genes <- as.character(PD_GWAS_list$Gene_symbol)
+PD_GWAS_ENSG <- as.character(PD_GWAS_list$Ensembl_ID)
+```
+
+The number of genes in this list is: **`r nrow(PD_GWAS_list)`**.
+
+# 2. Useful info from primary network
+Some information from the primary gene co-expression network was compared to results from secondary gene co-expression networks. 
+```{r, results = FALSE, warning = FALSE}
+# Load enrichments from CoExp and GMSCA source files
+gtex_net <- readRDS(file.path(here::here("data", "CoExp_source", "netFCortex.9.it.50.rds")))
+gtex_enrich <- as.data.frame(
+  getModulesEnrichment(
+    gtex_net,
+    markers.path = file.path(here::here("data", "GMSCA_source", "markers"))
+    )
+  )
+# Search NSL genes in primary network
+NSL_report_gt <- reportOnGenes(tissue = "FCortex", 
+                               genes = NSL_genes, 
+                               which.one = "gtexv6", 
+                               ens.correction = c("ENSG00000257382", "ENSG00000120071"))
+NSL_rep_gt <- NSL_report_gt$report 
+NSL_mods <- as.character(unique(NSL_rep_gt$module))
+gtex_enrich_NSL <- dplyr::select(gtex_enrich, one_of(NSL_mods))
+```
+
+# 3. Neuron network
+The overall structure of the network was first examined. 
+```{r}
+# Load network
+N_net = readRDS(file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.N.rds")))
+# Plot sizes of modules
+CoExpNets::plotModSizes(tissue = N_net, which.one = "new")
+```
+
+```{r}
+# Obtain eigengenes for each module
+N_net.name <- file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.N.rds"))
+N_egs <- CoExpNets::getNetworkEigengenes(tissue = N_net.name, which.one = "new")
+# Plot eigengene clustering 
+CoExpNets::plotEGClustering(tissue = N_net.name, which.one = "new")
+```
+
+```{r}
+# Plot correlation between modules
+corrplot(cor(N_egs), tl.srt = 45,
+         tl.col = "black",
+         type = "upper", 
+         tl.cex = 0.45,
+         order = "hclust",
+         title = paste0("Eigengene correlations for neuron-less network modules"),
+         mar = c(3, 2, 2.5, 4))
+```
+
+## 3.1. Searching gene lists {.tabset}
+### NSL genes
+First the genes encoding the NSL complex were searched. 
+```{r}
+# Search genes in network
+N_NSL_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = N_net.name, genes = NSL_ENSG, which.one = "new", net = NULL))
+N_NSL_mod <- tibble::rownames_to_column(N_NSL_mod, "ENSG")
+N_NSL_mod <- dplyr::select(N_NSL_mod, ENSG, module, p.val.mods)
+N_NSL_mod$Gene <- N_NSL_mod$ENSG
+# Add gene symbols
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  N_NSL_mod$Gene[N_NSL_mod$Gene== i] <- NSL_list$Gene_symbol[loc]
+}
+# Get module membership
+N_MM <- as.data.frame(N_net$MM)
+colnames(N_MM)<- "MM"
+N_MM <- rownames_to_column(N_MM, "ENSG")
+N_MM$MM <- signif(N_MM$MM, 4)
+# Add MM to table
+N_NSL_mod$MM <- N_NSL_mod$ENSG
+for (i in N_MM$ENSG) {
+  loc <- match(i, N_MM$ENSG)
+  N_NSL_mod$MM[N_NSL_mod$MM== i] <- N_MM$MM[loc]
+}
+# Reorder table
+N_NSL_mod <- N_NSL_mod[,c(4,1,5,2,3)]
+N_NSL_mod <- dplyr::arrange(N_NSL_mod, p.val.mods)
+# Store NSL enriched modules
+N_NSL_modules <- unique(N_NSL_mod$module)
+# Print result
+N_NSL_mod
+```
+```{r}
+# Format dataframe for figure
+N_NSL_mod$FDR <- p.adjust(N_NSL_mod$p.val.mods, method = "fdr")
+names(N_NSL_mod)[names(N_NSL_mod)=="p.val.mods"] <- "p.val"
+names(N_NSL_mod)[names(N_NSL_mod)=="module"] <- "Module"
+N_NSL_mod$p.val <- as.numeric(N_NSL_mod$p.val)
+N_NSL_mod <- dplyr::arrange(N_NSL_mod, Module)
+N_NSL_mod$position <- nrow(N_NSL_mod):1
+N_NSL_mod$`-log10(p.val)` <- -log10(N_NSL_mod$p.val)
+N_NSL_mod$`-log10(FDR)` <- -log10(N_NSL_mod$FDR)
+# Produce plot
+source(file.path(here::here("scripts", "CoExp_functions.R")))
+ggplot(N_NSL_mod, aes(Gene, reorder(Module, position))) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.5)) +
+  labs(y = "Module", x = "Gene") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+The total number of genes in the output table was **`r nrow(N_NSL_mod)`**, indicating there were **`r nrow(NSL_list) - nrow(N_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(N_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
+```{r, results = FALSE, warning = FALSE}
+# Load cell type markers enriched for each module
+N_mod_enrich <- as.data.frame(getModulesEnrichment(N_net, 
+                                                   markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+# Filter enrichments for NSL modules
+N_mod_enrich_NSL <- dplyr::select(N_mod_enrich, one_of(N_NSL_modules))
+```
+
+The modules containing NSL genes showed **no significant enrichment** for **any cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+N_changes <- enrichmentEvolution(gtex_net, 
+                                 N_net, 
+                                 genes = NSL_ENSG, 
+                                 markers.path = file.path(here::here("data", "GMSCA_source", "markers")))
+N_changes$ENSG <- as.character(N_changes$gene)
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  N_changes$gene[N_changes$gene == i] <- NSL_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+N_changes[,c(1,2,3,4,5)]
+```
+
+The modules containing NSL genes showed **no significant enrichment** for **any cell types**. 
+
+### PD mendelian genes
+The results tables for the PD mendelian gene list were filtered for the `r length(N_NSL_modules)` modules containing NSL genes.
+```{r}
+# Search genes in network
+N_PD_mendelian_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = N_net.name, 
+                                                                genes = PD_mendelian_ENSG, 
+                                                                which.one = "new", 
+                                                                net = NULL))
+N_PD_mendelian_mod <- tibble::rownames_to_column(N_PD_mendelian_mod, "ENSG")
+N_PD_mendelian_mod <- dplyr::select(N_PD_mendelian_mod, ENSG, module, p.val.mods)
+N_PD_mendelian_mod$Gene <- N_PD_mendelian_mod$ENSG
+# Add gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  N_PD_mendelian_mod$Gene[N_PD_mendelian_mod$Gene== i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Add MM to table
+N_PD_mendelian_mod$MM <- N_PD_mendelian_mod$ENSG
+for (i in N_MM$ENSG) {
+  loc <- match(i, N_MM$ENSG)
+  N_PD_mendelian_mod$MM[N_PD_mendelian_mod$MM== i] <- N_MM$MM[loc]
+}
+# Reorder table
+N_PD_mendelian_mod <- N_PD_mendelian_mod[,c(4,1,5,2,3)]
+N_PD_mendelian_mod <- dplyr::arrange(N_PD_mendelian_mod, p.val.mods)
+# Filter for NSL enriched modules 
+N_PD_mendelian_mod1 <- filter(N_PD_mendelian_mod, module %in% N_NSL_modules)
+# Print result
+N_PD_mendelian_mod1
+```
+
+The number of genes in the output table was **`r nrow(N_PD_mendelian_mod)`**, indicating there were **`r nrow(PD_mendelian_list) - nrow(N_PD_mendelian_mod)`** genes missing from the search. These genes appeared in `r length(unique(N_PD_mendelian_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. 
+```{r, results = FALSE, warning = FALSE}
+# Filter for genes found in modules containing NSL genes
+PD_mendelian_genes[PD_mendelian_genes=="PRKN"] <- "PARK2"
+PD_mendelian_report <- reportOnGenes(tissue = "FCortex", 
+                                     genes = PD_mendelian_genes, 
+                                     which.one = "gtexv6", 
+                                     ens.correction = c("ENSG00000262446", "ENSG00000177628", "ENSG00000257437", "ENSG00000186868"))
+PD_mendelian_rep <- PD_mendelian_report$report
+PD_mendelian_rep <- dplyr::filter(PD_mendelian_rep, module %in% NSL_mods)
+PD_mendelian_ENSG_fil <- as.character(PD_mendelian_rep$ensgene)
+```
+
+The modules containing these filtered PD mendelian genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+N_PD_mendelian_changes <- enrichmentEvolution(gtex_net, 
+                                              N_net, 
+                                              genes = PD_mendelian_ENSG_fil, 
+                                              markers.path = file.path(here::here("data", "GMSCA_source", "markers")))
+N_PD_mendelian_changes$ENSG <- as.character(N_PD_mendelian_changes$gene)
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  N_PD_mendelian_changes$gene[N_PD_mendelian_changes$gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+N_PD_mendelian_changes[,c(1,2,3,4,5)]
+```
+
+### PD sporadic genes
+```{r}
+# Search genes in network
+N_PD_GWAS_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = N_net.name, genes = PD_GWAS_ENSG, which.one = "new", net = NULL))
+N_PD_GWAS_mod <- tibble::rownames_to_column(N_PD_GWAS_mod, "ENSG")
+N_PD_GWAS_mod <- dplyr::select(N_PD_GWAS_mod, ENSG, module, p.val.mods)
+N_PD_GWAS_mod$Gene <- N_PD_GWAS_mod$ENSG
+# Add gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  N_PD_GWAS_mod$Gene[N_PD_GWAS_mod$Gene== i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Add MM to table
+N_PD_GWAS_mod$MM <- N_PD_GWAS_mod$ENSG
+for (i in N_MM$ENSG) {
+  loc <- match(i, N_MM$ENSG)
+  N_PD_GWAS_mod$MM[N_PD_GWAS_mod$MM== i] <- N_MM$MM[loc]
+}
+# Reorder table
+N_PD_GWAS_mod <- N_PD_GWAS_mod[,c(4,1,5,2,3)]
+N_PD_GWAS_mod <- dplyr::arrange(N_PD_GWAS_mod, p.val.mods)
+# Filter for NSL enriched modules 
+N_PD_GWAS_mod1 <- filter(N_PD_GWAS_mod, module %in% N_NSL_modules)
+# Print result
+N_PD_GWAS_mod1
+```
+The number of genes in the output table was **`r nrow(N_PD_GWAS_mod)`**, indicating there were **`r nrow(PD_GWAS_list) - nrow(N_PD_GWAS_mod)`** genes missing from the search. These genes appeared in `r length(unique(N_PD_GWAS_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. 
+```{r, results = FALSE, warning = FALSE}
+# Filter for genes found in modules containing NSL genes
+PD_GWAS_genes <- as.character(PD_GWAS_list$Gene_symbol)
+PD_GWAS_genes[PD_GWAS_genes=="CCAR2"] <- "KIAA1967"
+PD_GWAS_genes[PD_GWAS_genes=="KLHL7-DT"] <- "KLHL7-AS1"
+PD_GWAS_genes[PD_GWAS_genes=="RAB29"] <- "RAB7L1"
+PD_GWAS_genes[PD_GWAS_genes=="RETREG3"] <- "FAM134C"
+PD_GWAS_genes[PD_GWAS_genes=="SGF29"] <- "CCDC101"
+PD_GWAS_report <- reportOnGenes(tissue = "FCortex", 
+                                genes = PD_GWAS_genes, 
+                                which.one = "gtexv6", 
+                                ens.correction = c("ENSG00000263031", "ENSG00000145723", "ENSG00000233209", 
+                                                   "ENSG00000179344", "ENSG00000228987", "ENSG00000204287", 
+                                                   "ENSG00000257437", "ENSG00000186868", "ENSG00000262234", 
+                                                   "ENSG00000145725",  "ENSG00000255439", "ENSG00000167397", 
+                                                   "ENSG00000232748", "ENSG00000167394"))
+PD_GWAS_rep <- PD_GWAS_report$report
+PD_GWAS_rep <- dplyr::filter(PD_GWAS_rep, module %in% NSL_mods)
+PD_GWAS_ENSG_fil <- as.character(PD_GWAS_rep$ensgene)
+```
+
+The modules containing these filtered sporadic PD genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+N_PD_GWAS_changes <- enrichmentEvolution(gtex_net, 
+                                         N_net, 
+                                         genes = PD_GWAS_ENSG_fil, 
+                                         markers.path = file.path(here::here("data", "GMSCA_source", "markers")))
+N_PD_GWAS_changes$ENSG <- as.character(N_PD_GWAS_changes$gene)
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  N_PD_GWAS_changes$gene[N_PD_GWAS_changes$gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+N_PD_GWAS_changes[,c(1,2,3,4,5)]
+```
+
+## 3.2. Summary
+The **frequency** of **genes** within each gene **list** apppearing in each of the **`r length(N_NSL_modules)` NSL enriched modules** was calculated.
+```{r, include = FALSE}
+# Collate module results into one table
+N1 <- N_PD_mendelian_mod1['module']
+N1['Gene_list'] <- "PD_mendelian"
+N2 <- N_PD_GWAS_mod1['module']
+N2['Gene_list'] <- "PD_GWAS"
+N_mods_list <- do.call(rbind, list(N1, N2))
+# Display as frequency of each module within each list
+N_mod_freq <- with(N_mods_list, table(module, Gene_list))
+N_mod_freq <- as.data.frame.matrix(N_mod_freq)
+N_mod_freq <- dplyr::filter(N_mod_freq, rownames(N_mod_freq) %in% N_NSL_modules)
+N_mod_freq <- N_mod_freq[c(4, 3, 7, 5, 6, 2, 8, 1),]
+``` 
+
+```{r}
+knitr::kable(N_mod_freq)
+```
+
+The **significance** of the **enrichments** of each **gene list** within each of the **`r length(N_NSL_modules)` NSL enriched modules** was also calculated. P-values were **FDR-corrected** before summarising. 
+```{r}
+# FDR correct p values
+N_PD_mendelian_mod1$FDR <- p.adjust(N_PD_mendelian_mod1$p.val.mods, method = "fdr")
+N_PD_GWAS_mod1$FDR <- p.adjust(N_PD_GWAS_mod1$p.val.mods, method = "fdr")
+```
+
+```{r, include = FALSE}
+# Collate module results into one table
+Ns1 <- data.frame(N_PD_mendelian_mod1$module, N_PD_mendelian_mod1$FDR)
+names(Ns1)[names(Ns1)=="N_PD_mendelian_mod1.FDR"] <- "FDR"
+names(Ns1)[names(Ns1)=="N_PD_mendelian_mod1.module"] <- "Module"
+Ns1$Gene_list <- "PD_mendelian"
+Ns2 <- data.frame(N_PD_GWAS_mod1$module, N_PD_GWAS_mod1$FDR)
+names(Ns2)[names(Ns2)=="N_PD_GWAS_mod1.FDR"] <- "FDR"
+names(Ns2)[names(Ns2)=="N_PD_GWAS_mod1.module"] <- "Module"
+Ns2$Gene_list <- "PD_GWAS"
+N_pvals_list <- dplyr::bind_rows(Ns1, Ns2)
+# Display as true/false table
+N_TF <- N_pvals_list %>% 
+  dplyr::distinct() %>%
+  tidyr::spread(Gene_list, FDR)
+N_TF <- tibble::column_to_rownames(N_TF, var = "Module")
+N_TF <- N_TF[c(4, 3, 7, 5, 6, 2, 8, 1),]
+```
+
+```{r}
+knitr::kable(N_TF)
+```
+
+```{r}
+# Filter repeats
+N_melt_summ <- N_pvals_list %>%
+  dplyr::distinct()
+# Prep for figure 
+names(N_melt_summ)[names(N_melt_summ)=="module"] <- "Module"
+N_melt_summ$Module <- as.character(N_melt_summ$Module)
+N_melt_summ$Gene_list <- as.character(N_melt_summ$Gene_list)
+N_melt_summ <- rbind(N_melt_summ, c("salmon4", 0.1, "zzz")) # Buffer row just to align figure to NSL figure better
+N_melt_summ$FDR <- as.numeric(N_melt_summ$FDR)
+N_melt_summ$`-log10(FDR)` <- -log10(N_melt_summ$FDR)
+N_melt_summ <- dplyr::arrange(N_melt_summ, Module)
+# Plot
+ggplot(N_melt_summ, aes(Gene_list, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,4.5)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(axis.text = element_text(size = 6))
+```
+
+# 4. Astrocyte network
+The overall structure of the network was first examined.
+```{r}
+# Load network
+MA_net = readRDS(file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.MA.rds")))
+# Plot sizes of modules making up the network
+CoExpNets::plotModSizes(tissue = MA_net, which.one = "new")
+```
+
+```{r}
+# Obtain eigengenes for each module
+MA_net.name <- file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.MA.rds"))
+MA_egs <- CoExpNets::getNetworkEigengenes(tissue = MA_net.name, which.one = "new")
+# Plot eigengene clustering 
+CoExpNets::plotEGClustering(tissue = MA_net.name, which.one = "new")
+```
+
+```{r}
+# Plot correlation between modules
+corrplot(cor(MA_egs), tl.srt = 45,
+         tl.col = "black",
+         type = "upper", 
+         tl.cex = 0.45,
+         order = "hclust",
+         title = paste0("Eigengene correlations for GTEx v6 modules"),
+         mar = c(3, 2, 2.5, 4))
+```
+
+## 4.1. Searching gene lists {.tabset}
+### NSL genes
+```{r}
+# Search genes in network
+MA_NSL_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = MA_net.name, genes = NSL_ENSG, which.one = "new", net = NULL))
+MA_NSL_mod <- tibble::rownames_to_column(MA_NSL_mod, "ENSG")
+MA_NSL_mod <- dplyr::select(MA_NSL_mod, ENSG, module, p.val.mods)
+MA_NSL_mod$Gene <- MA_NSL_mod$ENSG
+# Add gene symbols
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  MA_NSL_mod$Gene[MA_NSL_mod$Gene== i] <- NSL_list$Gene_symbol[loc]
+}
+# Get module membership
+MA_MM <- as.data.frame(MA_net$MM)
+colnames(MA_MM)<- "MM"
+MA_MM <- rownames_to_column(MA_MM, "ENSG")
+MA_MM$MM <- signif(MA_MM$MM, 4)
+# Add MM to table
+MA_NSL_mod$MM <- MA_NSL_mod$ENSG
+for (i in MA_MM$ENSG) {
+  loc <- match(i, MA_MM$ENSG)
+  MA_NSL_mod$MM[MA_NSL_mod$MM== i] <- MA_MM$MM[loc]
+}
+# Reorder table
+MA_NSL_mod <- MA_NSL_mod[,c(4,1,5,2,3)]
+MA_NSL_mod <- dplyr::arrange(MA_NSL_mod, p.val.mods)
+# Store NSL enriched modules
+MA_NSL_modules <- unique(MA_NSL_mod$module)
+# Print result
+MA_NSL_mod
+```
+```{r}
+# Format dataframe for figure
+MA_NSL_mod$FDR <- p.adjust(MA_NSL_mod$p.val.mods, method = "fdr")
+names(MA_NSL_mod)[names(MA_NSL_mod)=="p.val.mods"] <- "p.val"
+names(MA_NSL_mod)[names(MA_NSL_mod)=="module"] <- "Module"
+MA_NSL_mod$p.val <- as.numeric(MA_NSL_mod$p.val)
+MA_NSL_mod <- dplyr::arrange(MA_NSL_mod, Module)
+MA_NSL_mod$position <- nrow(MA_NSL_mod):1
+MA_NSL_mod$`-log10(p.val)` <- -log10(MA_NSL_mod$p.val)
+MA_NSL_mod$`-log10(FDR)` <- -log10(MA_NSL_mod$FDR)
+# Produce plot
+ggplot(MA_NSL_mod, aes(Gene, reorder(Module, position))) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.5)) +
+  labs(y = "Module", x = "Gene") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+The number of genes in the output table was **`r nrow(MA_NSL_mod)`**, indicating there were **`r nrow(NSL_list) - nrow(MA_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(MA_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
+```{r, results = FALSE}
+# Load cell type markers enriched for each module
+MA_mod_enrich <- as.data.frame(getModulesEnrichment(MA_net, 
+                                                    markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+# Filter enrichments for NSL modules
+MA_mod_enrich_NSL <- dplyr::select(MA_mod_enrich, one_of(MA_NSL_modules))
+```
+
+One of the modules containing NSL genes, namely the **darkred** module which contained *MCRS1*, showed **significant enrichment** for **12 types** of **neuronal** cells. 
+```{r}
+# Only one module contains values <1, examine celltypes more closely
+MA_mod_enrich_NSL %>%
+  dplyr::filter(darkred <= 0.05) %>%
+  dplyr::select(darkred)
+```
+
+```{r, results = FALSE}
+# Compare changes in enrichments
+MA_changes <- enrichmentEvolution(gtex_net, 
+                                  MA_net, 
+                                  genes = NSL_ENSG, 
+                                  markers.path = file.path(here::here("data", "GMSCA_source", "markers")))
+MA_changes$ENSG <- as.character(MA_changes$gene)
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  MA_changes$gene[MA_changes$gene == i] <- NSL_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+MA_changes[,c(1,2,3,4,5)]
+```
+
+The results tables for the following gene lists were filtered for the `r length(MA_NSL_modules)` modules containing NSL genes. 
+
+### PD mendelian genes
+```{r}
+# Search genes in network
+MA_PD_mendelian_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = MA_net.name, genes = PD_mendelian_ENSG, which.one = "new", net = NULL))
+MA_PD_mendelian_mod <- tibble::rownames_to_column(MA_PD_mendelian_mod, "ENSG")
+MA_PD_mendelian_mod <- dplyr::select(MA_PD_mendelian_mod, ENSG, module, p.val.mods)
+MA_PD_mendelian_mod$Gene <- MA_PD_mendelian_mod$ENSG
+# Add gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  MA_PD_mendelian_mod$Gene[MA_PD_mendelian_mod$Gene== i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Add MM to table
+MA_PD_mendelian_mod$MM <- MA_PD_mendelian_mod$ENSG
+for (i in MA_MM$ENSG) {
+  loc <- match(i, MA_MM$ENSG)
+  MA_PD_mendelian_mod$MM[MA_PD_mendelian_mod$MM== i] <- MA_MM$MM[loc]
+}
+# Reorder table
+MA_PD_mendelian_mod <- MA_PD_mendelian_mod[,c(4,1,5,2,3)]
+MA_PD_mendelian_mod <- dplyr::arrange(MA_PD_mendelian_mod, p.val.mods)
+# Filter for NSL enriched modules 
+MA_PD_mendelian_mod1 <- filter(MA_PD_mendelian_mod, module %in% MA_NSL_modules)
+# Print result
+MA_PD_mendelian_mod1
+```
+The number of genes in the output table was **`r nrow(MA_PD_mendelian_mod)`**, indicating there were **`r nrow(PD_mendelian_list) - nrow(MA_PD_mendelian_mod)`** genes missing from the search. These genes appeared in `r length(unique(MA_PD_mendelian_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. The modules containing these filtered PD mendelian genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+MA_PD_mendelian_changes <- enrichmentEvolution(gtex_net, 
+                                               MA_net, 
+                                               genes = PD_mendelian_ENSG_fil, 
+                                               markers.path = file.path(here::here("data", "GMSCA_source","markers")))
+MA_PD_mendelian_changes$ENSG <- as.character(MA_PD_mendelian_changes$gene)
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  MA_PD_mendelian_changes$gene[MA_PD_mendelian_changes$gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+MA_PD_mendelian_changes[,c(1,2,3,4,5)]
+```
+
+### PD sporadic genes
+```{r}
+# Search genes in network
+MA_PD_GWAS_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = MA_net.name, genes = PD_GWAS_ENSG, which.one = "new", net = NULL))
+MA_PD_GWAS_mod <- tibble::rownames_to_column(MA_PD_GWAS_mod, "ENSG")
+MA_PD_GWAS_mod <- dplyr::select(MA_PD_GWAS_mod, ENSG, module, p.val.mods)
+MA_PD_GWAS_mod$Gene <- MA_PD_GWAS_mod$ENSG
+# Add gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  MA_PD_GWAS_mod$Gene[MA_PD_GWAS_mod$Gene== i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Add MM to table
+MA_PD_GWAS_mod$MM <- MA_PD_GWAS_mod$ENSG
+for (i in MA_MM$ENSG) {
+  loc <- match(i, MA_MM$ENSG)
+  MA_PD_GWAS_mod$MM[MA_PD_GWAS_mod$MM== i] <- MA_MM$MM[loc]
+}
+# Reorder table
+MA_PD_GWAS_mod <- MA_PD_GWAS_mod[,c(4,1,5,2,3)]
+MA_PD_GWAS_mod <- dplyr::arrange(MA_PD_GWAS_mod, p.val.mods)
+# Filter for NSL enriched modules 
+MA_PD_GWAS_mod1 <- filter(MA_PD_GWAS_mod, module %in% MA_NSL_modules)
+# Print result
+MA_PD_GWAS_mod1
+```
+The number of genes in the output table was **`r nrow(MA_PD_GWAS_mod)`**, indicating there were **`r nrow(PD_GWAS_list) - nrow(MA_PD_GWAS_mod)`** genes missing from the search. These genes appeared in `r length(unique(MA_PD_GWAS_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. The modules containing these filtered sporadic PD genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+MA_PD_GWAS_changes <- enrichmentEvolution(gtex_net, MA_net, genes = PD_GWAS_ENSG_fil, markers.path = file.path(here::here("data", "GMSCA_source","markers")))
+MA_PD_GWAS_changes$ENSG <- as.character(MA_PD_GWAS_changes$gene)
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  MA_PD_GWAS_changes$gene[MA_PD_GWAS_changes$gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+MA_PD_GWAS_changes[,c(1,2,3,4,5)]
+```
+
+## 4.2. Summary
+The **frequency** of **genes** within each gene **list** apppearing in each of the **`r length(MA_NSL_modules)` NSL enriched modules** was calculated. 
+```{r}
+# Collate module results into one table
+MA1 <- MA_PD_mendelian_mod1['module']
+MA1['Gene_list'] <- "PD_mendelian"
+MA2 <- MA_PD_GWAS_mod1['module']
+MA2['Gene_list'] <- "PD_GWAS"
+MA_mods_list <- do.call(rbind, list(MA1, MA2))
+# Display as frequency of each module within each list
+MA_mod_freq <- with(MA_mods_list, table(module, Gene_list))
+MA_mod_freq <- as.data.frame.matrix(MA_mod_freq)
+MA_mod_freq <- dplyr::filter(MA_mod_freq, rownames(MA_mod_freq) %in% MA_NSL_modules)
+MA_mod_freq <- MA_mod_freq[c(5, 2, 3, 4, 1, 6),]
+```
+
+```{r}
+knitr::kable(MA_mod_freq)
+```
+
+The **significance** of the **enrichments** of each **gene list** within each of the **`r length(MA_NSL_modules)` NSL enriched modules** was also calculated. P-values were **FDR-corrected** before summarising. 
+```{r}
+# FDR correct p values
+MA_PD_mendelian_mod1$FDR <- p.adjust(MA_PD_mendelian_mod1$p.val.mods, method = "fdr")
+MA_PD_GWAS_mod1$FDR <- p.adjust(MA_PD_GWAS_mod1$p.val.mods, method = "fdr")
+```
+
+```{r}
+# Collate module results into one table
+MAs1 <- data.frame(MA_PD_mendelian_mod1$module, MA_PD_mendelian_mod1$FDR)
+names(MAs1)[names(MAs1)=="MA_PD_mendelian_mod1.FDR"] <- "FDR"
+names(MAs1)[names(MAs1)=="MA_PD_mendelian_mod1.module"] <- "Module"
+MAs1$Gene_list <- "PD_mendelian"
+MAs2 <- data.frame(MA_PD_GWAS_mod1$module, MA_PD_GWAS_mod1$FDR)
+names(MAs2)[names(MAs2)=="MA_PD_GWAS_mod1.FDR"] <- "FDR"
+names(MAs2)[names(MAs2)=="MA_PD_GWAS_mod1.module"] <- "Module"
+MAs2$Gene_list <- "PD_GWAS"
+MA_pvals_list <- dplyr::bind_rows(MAs1, MAs2)
+# Display as true/false table
+MA_TF <- MA_pvals_list %>% 
+  dplyr::distinct() %>%
+  tidyr::spread(Gene_list, FDR)
+MA_TF <- tibble::column_to_rownames(MA_TF, var = "Module")
+MA_TF <- MA_TF[c(5, 2, 3, 4, 1, 6),]
+```
+
+```{r}
+knitr::kable(MA_TF)
+```
+
+```{r}
+# Filter repeats
+MA_melt_summ <- MA_pvals_list %>%
+  dplyr::distinct()
+# Prep for figure 
+MA_melt_summ$Module <- as.character(MA_melt_summ$Module)
+MA_melt_summ$Gene_list <- as.character(MA_melt_summ$Gene_list)
+MA_melt_summ <- dplyr::arrange(MA_melt_summ, Module)
+MA_melt_summ$`-log10(FDR)` <- -log10(MA_melt_summ$FDR)
+# Plot
+ggplot(MA_melt_summ, aes(Gene_list, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,4.5)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(axis.text = element_text(size = 6))
+```
+
+# 5. Microglia network
+The overall structure of the network was first examined.
+```{r}
+# Load network
+MG_net = readRDS(file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.MG.rds")))
+# Plot sizes of modules making up the network
+CoExpNets::plotModSizes(tissue = MG_net, which.one = "new")
+```
+
+```{r}
+# Obtain eigengenes for each module
+MG_net.name <- file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.MG.rds"))
+MG_egs <- CoExpNets::getNetworkEigengenes(tissue = MG_net.name, which.one = "new")
+# Plot eigengene clustering 
+CoExpNets::plotEGClustering(tissue = MG_net.name, which.one = "new")
+```
+
+```{r}
+# Plot correlation between modules
+corrplot(cor(MG_egs), tl.srt = 45,
+         tl.col = "black",
+         type = "upper", 
+         tl.cex = 0.45,
+         order = "hclust",
+         title = paste0("Eigengene correlations for GTEx v6 modules"),
+         mar = c(3, 2, 2.5, 4))
+```
+
+## 5.1. Searching gene lists {.tabset}
+### NSL genes
+```{r}
+# Search genes in network
+MG_NSL_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = MG_net.name, genes = NSL_ENSG, which.one = "new", net = NULL))
+MG_NSL_mod <- tibble::rownames_to_column(MG_NSL_mod, "ENSG")
+MG_NSL_mod <- dplyr::select(MG_NSL_mod, ENSG, module, p.val.mods)
+MG_NSL_mod$Gene <- MG_NSL_mod$ENSG
+# Add gene symbols
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  MG_NSL_mod$Gene[MG_NSL_mod$Gene== i] <- NSL_list$Gene_symbol[loc]
+}
+# Get module membership
+MG_MM <- as.data.frame(MG_net$MM)
+colnames(MG_MM)<- "MM"
+MG_MM <- rownames_to_column(MG_MM, "ENSG")
+MG_MM$MM <- signif(MG_MM$MM, 4)
+# Add MM to table
+MG_NSL_mod$MM <- MG_NSL_mod$ENSG
+for (i in MG_MM$ENSG) {
+  loc <- match(i, MG_MM$ENSG)
+  MG_NSL_mod$MM[MG_NSL_mod$MM== i] <- MG_MM$MM[loc]
+}
+# Reorder table
+MG_NSL_mod <- MG_NSL_mod[,c(4,1,5,2,3)]
+MG_NSL_mod <- dplyr::arrange(MG_NSL_mod, p.val.mods)
+# Store NSL enriched modules
+MG_NSL_modules <- unique(MG_NSL_mod$module)
+# Print result
+MG_NSL_mod
+```
+```{r}
+# Format dataframe for figure
+MG_NSL_mod$FDR <- p.adjust(MG_NSL_mod$p.val.mods, method = "fdr")
+names(MG_NSL_mod)[names(MG_NSL_mod)=="p.val.mods"] <- "p.val"
+names(MG_NSL_mod)[names(MG_NSL_mod)=="module"] <- "Module"
+MG_NSL_mod$p.val <- as.numeric(MG_NSL_mod$p.val)
+MG_NSL_mod <- dplyr::arrange(MG_NSL_mod, Module)
+MG_NSL_mod$position <- nrow(MG_NSL_mod):1
+MG_NSL_mod$`-log10(p.val)` <- -log10(MG_NSL_mod$p.val)
+MG_NSL_mod$`-log10(FDR)` <- -log10(MG_NSL_mod$FDR)
+# Produce plot
+ggplot(MG_NSL_mod, aes(Gene, reorder(Module, position))) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.5)) +
+  labs(y = "Module", x = "Gene") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+The number of genes in the output table was **`r nrow(MG_NSL_mod)`**, indicating there were **`r nrow(NSL_list) - nrow(MG_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(MG_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
+```{r, results = FALSE}
+# Load cell type markers enriched for each module
+MG_mod_enrich <- as.data.frame(getModulesEnrichment(MG_net, 
+                                                    markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+# Filter enrichments for NSL modules
+MG_mod_enrich_NSL <- dplyr::select(MG_mod_enrich, one_of(MG_NSL_modules))
+```
+
+Two of the modules containing NSL genes showed **significant enrichment** for **neuronal** cells:  
+
+* **green** contained *MCRS1* and showed enrichment for **dopaminergic neurons** alone   
+
+```{r}
+# Examine celltypes more closely
+MG_mod_enrich_NSL %>%
+  dplyr::filter(green <= 0.05) %>%
+  dplyr::select(green)
+```
+
+* **salmon** contained *PHF20* and showed enrichment for **11** types of neurons
+
+```{r}
+# Examine celltypes more closely
+MG_mod_enrich_NSL %>%
+  dplyr::filter(salmon <= 0.05) %>%
+  dplyr::select(salmon)
+```
+
+```{r, results = FALSE}
+# Compare changes in enrichments
+MG_changes <- enrichmentEvolution(gtex_net, 
+                                  MG_net, 
+                                  genes = NSL_ENSG, 
+                                  markers.path = file.path(here::here("data", "GMSCA_source", "markers")))
+MG_changes$ENSG <- as.character(MG_changes$gene)
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  MG_changes$gene[MG_changes$gene == i] <- NSL_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+MG_changes[,c(1,2,3,4,5)]
+```
+
+The results tables for the following gene lists were filtered for the `r length(MG_NSL_modules)` modules containing NSL genes.
+
+### PD mendelian genes
+```{r}
+# Search genes in network
+MG_PD_mendelian_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = MG_net.name, genes = PD_mendelian_ENSG, which.one = "new", net = NULL))
+MG_PD_mendelian_mod <- tibble::rownames_to_column(MG_PD_mendelian_mod, "ENSG")
+MG_PD_mendelian_mod <- dplyr::select(MG_PD_mendelian_mod, ENSG, module, p.val.mods)
+MG_PD_mendelian_mod$Gene <- MG_PD_mendelian_mod$ENSG
+# Add gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  MG_PD_mendelian_mod$Gene[MG_PD_mendelian_mod$Gene== i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Add MM to table
+MG_PD_mendelian_mod$MM <- MG_PD_mendelian_mod$ENSG
+for (i in MG_MM$ENSG) {
+  loc <- match(i, MG_MM$ENSG)
+  MG_PD_mendelian_mod$MM[MG_PD_mendelian_mod$MM== i] <- MG_MM$MM[loc]
+}
+# Reorder table
+MG_PD_mendelian_mod <- MG_PD_mendelian_mod[,c(4,1,5,2,3)]
+MG_PD_mendelian_mod <- dplyr::arrange(MG_PD_mendelian_mod, p.val.mods)
+# Filter for NSL enriched modules 
+MG_PD_mendelian_mod1 <- filter(MG_PD_mendelian_mod, module %in% MG_NSL_modules)
+# Print result
+MG_PD_mendelian_mod1
+```
+The number of genes in the output table was **`r nrow(MG_PD_mendelian_mod)`**, indicating there were **`r nrow(PD_mendelian_list) - nrow(MG_PD_mendelian_mod)`** genes missing from the search. These genes appeared in `r length(unique(MG_PD_mendelian_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. The modules containing these filtered PD mendelian genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+MG_PD_mendelian_changes <- enrichmentEvolution(gtex_net, 
+                                               MG_net, 
+                                               genes = PD_mendelian_ENSG_fil, 
+                                               markers.path = file.path(here::here("data", "GMSCA_source","markers")))
+MG_PD_mendelian_changes$ENSG <- as.character(MG_PD_mendelian_changes$gene)
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  MG_PD_mendelian_changes$gene[MG_PD_mendelian_changes$gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+MG_PD_mendelian_changes[,c(1,2,3,4,5)]
+``` 
+
+### PD sporadic genes
+```{r}
+# Search genes in network
+MG_PD_GWAS_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = MG_net.name, genes = PD_GWAS_ENSG, which.one = "new", net = NULL))
+MG_PD_GWAS_mod <- tibble::rownames_to_column(MG_PD_GWAS_mod, "ENSG")
+MG_PD_GWAS_mod <- dplyr::select(MG_PD_GWAS_mod, ENSG, module, p.val.mods)
+MG_PD_GWAS_mod$Gene <- MG_PD_GWAS_mod$ENSG
+# Add gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  MG_PD_GWAS_mod$Gene[MG_PD_GWAS_mod$Gene== i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Add MM to table
+MG_PD_GWAS_mod$MM <- MG_PD_GWAS_mod$ENSG
+for (i in MG_MM$ENSG) {
+  loc <- match(i, MG_MM$ENSG)
+  MG_PD_GWAS_mod$MM[MG_PD_GWAS_mod$MM== i] <- MG_MM$MM[loc]
+}
+# Reorder table
+MG_PD_GWAS_mod <- MG_PD_GWAS_mod[,c(4,1,5,2,3)]
+MG_PD_GWAS_mod <- dplyr::arrange(MG_PD_GWAS_mod, p.val.mods)
+# Filter for NSL enriched modules 
+MG_PD_GWAS_mod1 <- filter(MG_PD_GWAS_mod, module %in% MG_NSL_modules)
+# Print result
+MG_PD_GWAS_mod1
+```
+The number of genes in the output table was **`r nrow(MG_PD_GWAS_mod)`**, indicating there were **`r nrow(PD_GWAS_list) - nrow(MG_PD_GWAS_mod)`** genes missing from the search. These genes appeared in `r length(unique(MG_PD_GWAS_mod$module))` modules.
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. The modules containing these filtered sporadic PD genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+MG_PD_GWAS_changes <- enrichmentEvolution(gtex_net, 
+                                          MG_net, 
+                                          genes = PD_GWAS_ENSG_fil, 
+                                          markers.path = file.path(here::here("data", "GMSCA_source","markers")))
+MG_PD_GWAS_changes$ENSG <- as.character(MG_PD_GWAS_changes$gene)
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  MG_PD_GWAS_changes$gene[MG_PD_GWAS_changes$gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+MG_PD_GWAS_changes[,c(1,2,3,4,5)]
+```
+
+## 5.2. Summary
+The **frequency** of **genes** within each gene **list** apppearing in each of the  **`r length(MG_NSL_modules)` NSL enriched modules** was calculated. 
+```{r}
+# Collate module results into one table
+MG1 <- MG_PD_mendelian_mod1['module']
+MG1['Gene_list'] <- "PD_mendelian"
+MG2 <- MG_PD_GWAS_mod1['module']
+MG2['Gene_list'] <- "PD_GWAS"
+MG_mods_list <- do.call(rbind, list(MG1, MG2))
+# Display as frequency of each module within each list
+MG_mod_freq <- with(MG_mods_list, table(module, Gene_list))
+MG_mod_freq <- as.data.frame.matrix(MG_mod_freq)
+MG_mod_freq <- dplyr::filter(MG_mod_freq, rownames(MG_mod_freq) %in% MG_NSL_modules)
+MG_mod_freq <- MG_mod_freq[c(5, 2, 3, 4, 1, 6), ]
+```
+
+```{r}
+knitr::kable(MG_mod_freq)
+```
+
+The **significance** of the **enrichments** of each **gene list** within each of the **`r length(MG_NSL_modules)` NSL enriched modules** was also calculated. P-values were **FDR-corrected** before summarising. 
+```{r}
+# FDR correct p values
+MG_PD_mendelian_mod1$FDR <- p.adjust(MG_PD_mendelian_mod1$p.val.mods, method = "fdr")
+MG_PD_GWAS_mod1$FDR <- p.adjust(MG_PD_GWAS_mod1$p.val.mods, method = "fdr")
+```
+
+```{r}
+# Collate module results into one table
+MGs1 <- data.frame(MG_PD_mendelian_mod1$module, MG_PD_mendelian_mod1$FDR)
+names(MGs1)[names(MGs1)=="MG_PD_mendelian_mod1.FDR"] <- "FDR"
+names(MGs1)[names(MGs1)=="MG_PD_mendelian_mod1.module"] <- "Module"
+MGs1$Gene_list <- "PD_mendelian"
+MGs2 <- data.frame(MG_PD_GWAS_mod1$module, MG_PD_GWAS_mod1$FDR)
+names(MGs2)[names(MGs2)=="MG_PD_GWAS_mod1.FDR"] <- "FDR"
+names(MGs2)[names(MGs2)=="MG_PD_GWAS_mod1.module"] <- "Module"
+MGs2$Gene_list <- "PD_GWAS"
+MG_pvals_list <- dplyr::bind_rows(MGs1, MGs2)
+# Display as true/false table
+MG_TF <- MG_pvals_list %>% 
+  dplyr::distinct() %>%
+  tidyr::spread(Gene_list, FDR)
+MG_TF <- tibble::column_to_rownames(MG_TF, var = "Module")
+MG_TF <- MG_TF[c(6, 2, 3, 1, 5, 4), ]
+```
+
+```{r}
+knitr::kable(MG_TF)
+```
+
+```{r}
+# Filter repeats
+MG_melt_summ <- MG_pvals_list %>%
+  dplyr::distinct()
+# Prep for figure 
+MG_melt_summ$Module <- as.character(MG_melt_summ$Module)
+MG_melt_summ$Gene_list <- as.character(MG_melt_summ$Gene_list)
+MG_melt_summ <- dplyr::arrange(MG_melt_summ, Module)
+MG_melt_summ$`-log10(FDR)` <- -log10(MG_melt_summ$FDR)
+# Plot
+ggplot(MG_melt_summ, aes(Gene_list, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,4.5)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(axis.text = element_text(size = 6))
+```
+
+# 6. Oligodendrocyte network
+The overall structure of the network was first examined.
+```{r}
+# Load network
+OLG_net = readRDS(file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.OLG.rds")))
+# Plot sizes of modules making up the network
+CoExpNets::plotModSizes(tissue = OLG_net, which.one = "new")
+```
+
+```{r}
+# Obtain eigengenes for each module
+OLG_net.name <- file.path(here::here("data", "Networks", "netFCortex.9.it.50.rds.No.OLG.rds"))
+OLG_egs <- CoExpNets::getNetworkEigengenes(tissue = OLG_net.name, which.one = "new")
+# Plot eigengene clustering 
+CoExpNets::plotEGClustering(tissue = OLG_net.name, which.one = "new")
+```
+
+```{r}
+# Plot correlation between modules
+corrplot(cor(OLG_egs), tl.srt = 45,
+         tl.col = "black",
+         type = "upper", 
+         tl.cex = 0.45,
+         order = "hclust",
+         title = paste0("Eigengene correlations for GTEx v6 modules"),
+         mar = c(3, 2, 2.5, 4))
+```
+
+## 6.1. Searching gene lists {.tabset}
+### NSL genes
+```{r}
+# Search genes in network
+OLG_NSL_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = OLG_net.name, 
+                                                         genes = NSL_ENSG, 
+                                                         which.one = "new", 
+                                                         net = NULL))
+OLG_NSL_mod <- tibble::rownames_to_column(OLG_NSL_mod, "ENSG")
+OLG_NSL_mod <- dplyr::select(OLG_NSL_mod, ENSG, module, p.val.mods)
+OLG_NSL_mod$Gene <- OLG_NSL_mod$ENSG
+# Add gene symbols
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  OLG_NSL_mod$Gene[OLG_NSL_mod$Gene== i] <- NSL_list$Gene_symbol[loc]
+}
+# Get module membership
+OLG_MM <- as.data.frame(OLG_net$MM)
+colnames(OLG_MM)<- "MM"
+OLG_MM <- rownames_to_column(OLG_MM, "ENSG")
+OLG_MM$MM <- signif(OLG_MM$MM, 4)
+# Add MM to table
+OLG_NSL_mod$MM <- OLG_NSL_mod$ENSG
+for (i in OLG_MM$ENSG) {
+  loc <- match(i, OLG_MM$ENSG)
+  OLG_NSL_mod$MM[OLG_NSL_mod$MM== i] <- OLG_MM$MM[loc]
+}
+# Reorder table
+OLG_NSL_mod <- OLG_NSL_mod[,c(4,1,5,2,3)]
+OLG_NSL_mod <- dplyr::arrange(OLG_NSL_mod, p.val.mods)
+# Store NSL enriched modules
+OLG_NSL_modules <- unique(OLG_NSL_mod$module)
+# Print result
+OLG_NSL_mod
+```
+```{r}
+# Format dataframe for figure
+OLG_NSL_mod$FDR <- p.adjust(OLG_NSL_mod$p.val.mods, method = "fdr")
+names(OLG_NSL_mod)[names(OLG_NSL_mod)=="p.val.mods"] <- "p.val"
+names(OLG_NSL_mod)[names(OLG_NSL_mod)=="module"] <- "Module"
+OLG_NSL_mod$p.val <- as.numeric(OLG_NSL_mod$p.val)
+OLG_NSL_mod <- dplyr::arrange(OLG_NSL_mod, Module)
+OLG_NSL_mod$position <- nrow(OLG_NSL_mod):1
+OLG_NSL_mod$`-log10(p.val)` <- -log10(OLG_NSL_mod$p.val)
+OLG_NSL_mod$`-log10(FDR)` <- -log10(OLG_NSL_mod$FDR)
+# Produce plot
+ggplot(OLG_NSL_mod, aes(Gene, reorder(Module, position))) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.5)) +
+  labs(y = "Module", x = "Gene") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+The number of genes in the output table was **`r nrow(OLG_NSL_mod)`**, indicating there were **`r nrow(NSL_list) - nrow(OLG_NSL_mod)`** genes missing from the search. These genes appeared in `r length(unique(OLG_NSL_modules))` modules, each of which was examined for **enrichment** of cell type specific markers. 
+```{r, results = FALSE}
+# Load cell type markers enriched for each module
+OLG_mod_enrich <- as.data.frame(getModulesEnrichment(OLG_net, 
+                                                     markers.path = file.path(here::here("data", "GMSCA_source", "markers"))))
+# Filter enrichments for NSL modules
+OLG_mod_enrich_NSL <- dplyr::select(OLG_mod_enrich, one_of(OLG_NSL_modules))
+```
+
+Two of the modules containing NSL genes showed **significant enrichment** for **neuronal** cells: 
+
+* **pink** contained *MCRS1* and showed enrichment for **dopaminergic neurons** as well as **cortical oligodendrocytes**
+```{r}
+# Examine celltypes more closely
+OLG_mod_enrich_NSL %>%
+  dplyr::filter(pink <= 0.05) %>%
+  dplyr::select(pink)
+```
+
+* **greenyellow** contained *PHF20* and showed enrichment for **8** types of neurons
+
+```{r}
+# Examine celltypes more closely
+OLG_mod_enrich_NSL %>%
+  dplyr::filter(greenyellow <= 0.05) %>%
+  dplyr::select(greenyellow)
+```
+
+```{r, results = FALSE}
+# Compare changes in enrichments
+OLG_changes <- enrichmentEvolution(gtex_net, 
+                                   OLG_net, 
+                                   genes = NSL_ENSG, 
+                                   markers.path = file.path(here::here("data", "GMSCA_source", "markers")))
+OLG_changes$ENSG <- as.character(OLG_changes$gene)
+for (i in NSL_list$Ensembl_ID) {
+  loc <- match(i, NSL_list$Ensembl_ID)
+  OLG_changes$gene[OLG_changes$gene == i] <- NSL_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+OLG_changes[,c(1,2,3,4,5)]
+```
+
+The results tables for the following gene lists were filtered for the `r length(OLG_NSL_modules)` modules containing NSL genes.
+
+### PD mendelian genes
+```{r}
+# Search genes in network
+OLG_PD_mendelian_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = OLG_net.name,
+                                                                  genes = PD_mendelian_ENSG, 
+                                                                  which.one = "new", 
+                                                                  net = NULL))
+OLG_PD_mendelian_mod <- tibble::rownames_to_column(OLG_PD_mendelian_mod, "ENSG")
+OLG_PD_mendelian_mod <- dplyr::select(OLG_PD_mendelian_mod, ENSG, module, p.val.mods)
+OLG_PD_mendelian_mod$Gene <- OLG_PD_mendelian_mod$ENSG
+# Add gene symbols
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  OLG_PD_mendelian_mod$Gene[OLG_PD_mendelian_mod$Gene== i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+# Add MM to table
+OLG_PD_mendelian_mod$MM <- OLG_PD_mendelian_mod$ENSG
+for (i in OLG_MM$ENSG) {
+  loc <- match(i, OLG_MM$ENSG)
+  OLG_PD_mendelian_mod$MM[OLG_PD_mendelian_mod$MM== i] <- OLG_MM$MM[loc]
+}
+# Reorder table
+OLG_PD_mendelian_mod <- OLG_PD_mendelian_mod[,c(4,1,5,2,3)]
+OLG_PD_mendelian_mod <- dplyr::arrange(OLG_PD_mendelian_mod, p.val.mods)
+# Filter for NSL enriched modules 
+OLG_PD_mendelian_mod1 <- filter(OLG_PD_mendelian_mod, module %in% OLG_NSL_modules)
+# Print result
+OLG_PD_mendelian_mod1
+```
+The number of genes in the output table was **`r nrow(OLG_PD_mendelian_mod)`**, indicating there were **`r nrow(PD_mendelian_list) - nrow(OLG_PD_mendelian_mod)`** genes missing from the search. These genes appeared in `r length(unique(OLG_PD_mendelian_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. The modules containing these filtered PD mendelian genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+OLG_PD_mendelian_changes <- enrichmentEvolution(gtex_net, 
+                                                OLG_net, 
+                                                genes = PD_mendelian_ENSG_fil, 
+                                                markers.path = file.path(here::here("data", "GMSCA_source","markers")))
+OLG_PD_mendelian_changes$ENSG <- as.character(OLG_PD_mendelian_changes$gene)
+for (i in PD_mendelian_list$Ensembl_ID) {
+  loc <- match(i, PD_mendelian_list$Ensembl_ID)
+  OLG_PD_mendelian_changes$gene[OLG_PD_mendelian_changes$gene == i] <- PD_mendelian_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+OLG_PD_mendelian_changes[,c(1,2,3,4,5)]
+``` 
+
+### PD sporadic genes
+```{r}
+# Search genes in network
+OLG_PD_GWAS_mod <- as.data.frame(CoExpNets::reportOnFETGenes(tissue = OLG_net.name, 
+                                                             genes = PD_GWAS_ENSG, 
+                                                             which.one = "new", net = NULL))
+OLG_PD_GWAS_mod <- tibble::rownames_to_column(OLG_PD_GWAS_mod, "ENSG")
+OLG_PD_GWAS_mod <- dplyr::select(OLG_PD_GWAS_mod, ENSG, module, p.val.mods)
+OLG_PD_GWAS_mod$Gene <- OLG_PD_GWAS_mod$ENSG
+# Add gene symbols
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  OLG_PD_GWAS_mod$Gene[OLG_PD_GWAS_mod$Gene== i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+# Add MM to table
+OLG_PD_GWAS_mod$MM <- OLG_PD_GWAS_mod$ENSG
+for (i in OLG_MM$ENSG) {
+  loc <- match(i, OLG_MM$ENSG)
+  OLG_PD_GWAS_mod$MM[OLG_PD_GWAS_mod$MM== i] <- OLG_MM$MM[loc]
+}
+# Reorder table
+OLG_PD_GWAS_mod <- OLG_PD_GWAS_mod[,c(4,1,5,2,3)]
+OLG_PD_GWAS_mod <- dplyr::arrange(OLG_PD_GWAS_mod, p.val.mods)
+# Filter for NSL enriched modules 
+OLG_PD_GWAS_mod1 <- filter(OLG_PD_GWAS_mod, module %in% OLG_NSL_modules)
+# Print result
+OLG_PD_GWAS_mod1
+```
+The number of genes in the output table was **`r nrow(OLG_PD_GWAS_mod)`**, indicating there were **`r nrow(PD_GWAS_list) - nrow(OLG_PD_GWAS_mod)`** genes missing from the search. These genes appeared in `r length(unique(OLG_PD_GWAS_mod$module))` modules.  
+
+Secondary GCN modules containing genes found in **primary GCN modules alongside NSL genes** were then examined for **enrichment** of cell type specific markers. The modules containing these filtered sporadic PD genes showed **several significant enrichments** for **different cell types**.
+```{r, results = FALSE}
+# Compare changes in enrichments
+OLG_PD_GWAS_changes <- enrichmentEvolution(gtex_net, 
+                                           OLG_net, 
+                                           genes = PD_GWAS_ENSG_fil, 
+                                           markers.path = file.path(here::here("data", "GMSCA_source","markers")))
+OLG_PD_GWAS_changes$ENSG <- as.character(OLG_PD_GWAS_changes$gene)
+for (i in PD_GWAS_list$Ensembl_ID) {
+  loc <- match(i, PD_GWAS_list$Ensembl_ID)
+  OLG_PD_GWAS_changes$gene[OLG_PD_GWAS_changes$gene == i] <- PD_GWAS_list$Gene_symbol[loc]
+}
+```
+
+The cell type enrichments were compared to that of the **primary** coexpression network. 
+```{r}
+OLG_PD_GWAS_changes[,c(1,2,3,4,5)]
+```
+
+## 6.2. Summary
+The **frequency** of **genes** within each gene **list** apppearing in each of the **`r length(OLG_NSL_modules)` NSL enriched modules** was calculated. 
+```{r}
+# Collate module results into one table
+OLG1 <- OLG_PD_mendelian_mod1['module']
+OLG1['Gene_list'] <- "PD_mendelian"
+OLG2 <- OLG_PD_GWAS_mod1['module']
+OLG2['Gene_list'] <- "PD_GWAS"
+OLG_mods_list <- do.call(rbind, list(OLG1, OLG2))
+# Display as frequency of each module within each list
+OLG_mod_freq <- with(OLG_mods_list, table(module, Gene_list))
+OLG_mod_freq <- as.data.frame.matrix(OLG_mod_freq)
+OLG_mod_freq <- dplyr::filter(OLG_mod_freq, rownames(OLG_mod_freq) %in% OLG_NSL_modules)
+OLG_mod_freq <- OLG_mod_freq[c(5, 1, 4, 6, 3, 2), ]
+```
+
+```{r}
+knitr::kable(OLG_mod_freq)
+```
+
+The **significance** of the **enrichments** of each **gene list** within each of the **`r length(OLG_NSL_modules)` NSL enriched modules** was also calculated. P-values were **FDR-corrected** before summarising. 
+```{r}
+# FDR correct p values
+OLG_PD_mendelian_mod1$FDR <- p.adjust(OLG_PD_mendelian_mod1$p.val.mods, method = "fdr")
+OLG_PD_GWAS_mod1$FDR <- p.adjust(OLG_PD_GWAS_mod1$p.val.mods, method = "fdr")
+```
+
+```{r}
+# Collate module results into one table
+OLGs1 <- data.frame(OLG_PD_mendelian_mod1$module, OLG_PD_mendelian_mod1$FDR)
+names(OLGs1)[names(OLGs1)=="OLG_PD_mendelian_mod1.FDR"] <- "FDR"
+names(OLGs1)[names(OLGs1)=="OLG_PD_mendelian_mod1.module"] <- "Module"
+OLGs1$Gene_list <- "PD_mendelian"
+OLGs2 <- data.frame(OLG_PD_GWAS_mod1$module, OLG_PD_GWAS_mod1$FDR)
+names(OLGs2)[names(OLGs2)=="OLG_PD_GWAS_mod1.FDR"] <- "FDR"
+names(OLGs2)[names(OLGs2)=="OLG_PD_GWAS_mod1.module"] <- "Module"
+OLGs2$Gene_list <- "PD_GWAS"
+OLG_pvals_list <- dplyr::bind_rows(OLGs1, OLGs2)
+# Display as true/false table
+OLG_TF <- OLG_pvals_list %>% 
+  dplyr::distinct() %>%
+  tidyr::spread(Gene_list, FDR)
+OLG_TF <- tibble::column_to_rownames(OLG_TF, var = "Module")
+OLG_TF <- OLG_TF[c(5, 1, 4, 6, 3, 2), ]
+```
+
+```{r}
+knitr::kable(OLG_TF)
+```
+
+```{r}
+# Filter repeats
+OLG_melt_summ <- OLG_pvals_list %>%
+  dplyr::distinct()
+# Prep for figure 
+OLG_melt_summ$Module <- as.character(OLG_melt_summ$Module)
+OLG_melt_summ$Gene_list <- as.character(OLG_melt_summ$Gene_list)
+OLG_melt_summ <- dplyr::arrange(OLG_melt_summ, Module)
+OLG_melt_summ$`-log10(FDR)` <- -log10(OLG_melt_summ$FDR)
+# Plot
+ggplot(OLG_melt_summ, aes(Gene_list, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR))) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,4.5)) +
+  labs(y = "Module", x = "Gene list") +
+  theme(axis.text = element_text(size = 6))
+```
+
+# 7. Overall summary {.tabset}
+## NSL genes
+First, the overall clustering of the NSL genes was examined.
+```{r} 
+# Format and join together NSL gene enrichment tables
+N_NSL_mod$Network <- "Neuron-corrected"
+MA_NSL_mod$Network <- "Astrocyte-corrected"
+MG_NSL_mod$Network <- "Microglia-corrected"
+OLG_NSL_mod$Network <- "Oligodendrocyte-corrected"
+NSL_fig <- do.call(rbind, list(N_NSL_mod, MA_NSL_mod, MG_NSL_mod, OLG_NSL_mod))
+NSL_fig <- dplyr::select(NSL_fig, Gene, Module, FDR, `-log10(FDR)`, Network)
+# Produce plot
+ggplot(NSL_fig, aes(Gene, Module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR)), size = 2) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,2.4)) +
+  labs(y = "Module", size = 4) +
+  facet_grid(factor(Network, 
+                    levels = c("Neuron-corrected", 
+                               "Astrocyte-corrected", 
+                               "Microglia-corrected", 
+                               "Oligodendrocyte-corrected")) ~ ., 
+             scales = "free", space = "free") +
+  theme(strip.text.y = element_text(angle = 90, size = 6), 
+        axis.text = element_text(size = 6), 
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        legend.key.size = unit(4, "mm"))
+```
+
+Each of the cell type corrections succeeded in increasing the number of cell type enrichments associated with GCN modules and the genes therein. These results were thus collated together to evaluate the cell type specific activity of the **NSL genes**.
+```{r}
+# Format cell type enrichment tables (N not included as no cell type enrichments in NSL modules)
+MA_mod_enrich_fig <- MA_mod_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05))
+MA_mod_enrich_fig <- as.data.frame(t(MA_mod_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+MG_mod_enrich_fig <- MG_mod_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05))
+MG_mod_enrich_fig <- as.data.frame(t(MG_mod_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+OLG_mod_enrich_fig <- OLG_mod_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05))
+OLG_mod_enrich_fig <- as.data.frame(t(OLG_mod_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+gtex_enrich_fig <- gtex_enrich_NSL %>%
+  dplyr::filter_all(any_vars(.<0.05)) 
+gtex_enrich_fig <- as.data.frame(t(gtex_enrich_fig)) %>%
+  rownames_to_column(var = "Module")
+# Format NSL gene enrichment tables
+MA_NSL_fig <- dplyr::select(MA_NSL_mod, Gene, Module)
+MA_NSL_fig$Network <- "Astrocyte-corrected"
+MG_NSL_fig <- dplyr::select(MG_NSL_mod, Gene, Module)
+MG_NSL_fig$Network <- "Microglia-corrected"
+OLG_NSL_fig <- dplyr::select(OLG_NSL_mod, Gene, Module)
+OLG_NSL_fig$Network <- "Oligodendrocyte-corrected"
+gtex_NSL_fig <- dplyr::select(NSL_rep_gt, gene, module)
+names(gtex_NSL_fig)[names(gtex_NSL_fig)=="gene"] <- "Gene"
+names(gtex_NSL_fig)[names(gtex_NSL_fig)== "module"] <- "Module"
+gtex_NSL_fig$Network <- "None"
+# Join both together 
+MA_NSL_figure <- dplyr::full_join(MA_mod_enrich_fig, MA_NSL_fig, by = "Module")
+MA_NSL_figure <- dplyr::filter_all(MA_NSL_figure, any_vars(.<1))
+MG_NSL_figure <- dplyr::full_join(MG_mod_enrich_fig, MG_NSL_fig, by = "Module")
+MG_NSL_figure <- dplyr::filter_all(MG_NSL_figure, any_vars(.<1))
+OLG_NSL_figure <- dplyr::full_join(OLG_mod_enrich_fig, OLG_NSL_fig, by = "Module")
+OLG_NSL_figure <- dplyr::filter_all(OLG_NSL_figure, any_vars(.<1))
+gtex_NSL_figure <- dplyr::full_join(gtex_enrich_fig, gtex_NSL_fig, by = "Module")
+gtex_NSL_figure <- dplyr::filter_all(gtex_NSL_figure, any_vars(.<1))
+big_figure <- bind_rows(MA_NSL_figure, MG_NSL_figure, OLG_NSL_figure, gtex_NSL_figure)
+big_figure <- big_figure[,c(14,15,1:13,16:22)]
+# Reformat and add -log10 values
+big_figure2 <- tidyr::gather(big_figure, key = "Cell_type", value = "Enrichment", 4:22, -Network)
+big_figure2$`-log10(p.value)` <- -log10(big_figure2$Enrichment)
+big_figure2$`-log10(p.value)` <- as.numeric(big_figure2$`-log10(p.value)`)
+big_figure2$`-log10(p.value)`[is.na(big_figure2$`-log10(p.value)`)] <- 0
+# Remove cell types with no enrichments per network
+big_figure3 <- big_figure2 %>%
+  dplyr::filter(Enrichment < 1)  %>%
+  dplyr::arrange(Cell_type) %>%
+  dplyr::mutate(FDR = p.adjust(Enrichment, method = "fdr")) %>%
+  dplyr::mutate(`-log10(FDR)` = -log10(FDR))
+```
+
+```{r}
+# Produce plot
+ggplot(big_figure3, aes(Gene, Cell_type)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num2(FDR)), size = 3) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,15.5)) +
+  labs(y = "Cell type", fill = "-log10(FDR)") +
+  facet_grid(factor(Network, 
+                    levels = c("None", 
+                               "Astrocyte-corrected", 
+                               "Microglia-corrected", 
+                               "Oligodendrocyte-corrected")) ~ ., 
+             scales = "free", space = "free") +
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6), 
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+## PD genes 
+Second, the overall clustering of the PD associated genes was examined, focusing on modules containing *KAT8* and *KANSL1*.
+```{r}
+# Join together PD gene list enrichment tables, filter for KAT8/KANSL1 modules
+N_PD_mendelian_mod2 <- N_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("darkslateblue", "salmon4"))
+N_PD_GWAS_mod2 <- N_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("darkslateblue", "salmon4"))
+N_PD_mod <- dplyr::bind_rows(N_PD_mendelian_mod2, N_PD_GWAS_mod2)
+N_PD_mod$Network <- "Neuron-corrected"
+MA_PD_mendelian_mod2 <- MA_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("cyan", "red"))
+MA_PD_GWAS_mod2 <- MA_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("cyan", "red"))
+MA_PD_mod <- dplyr::bind_rows(MA_PD_mendelian_mod2, MA_PD_GWAS_mod2)
+MA_PD_mod$Network <- "Astrocyte-corrected"
+MG_PD_mendelian_mod2 <- MG_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("red", "magenta"))
+MG_PD_GWAS_mod2 <- MG_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("red", "magenta"))
+MG_PD_mod <- dplyr::bind_rows(MG_PD_mendelian_mod2, MG_PD_GWAS_mod2)
+MG_PD_mod$Network <- "Microglia-corrected"
+OLG_PD_mendelian_mod2 <- OLG_PD_mendelian_mod1 %>%
+  dplyr::mutate(List = "Mendelian PD") %>%
+  dplyr::filter(module %in% c("green", "black"))
+OLG_PD_GWAS_mod2 <- OLG_PD_GWAS_mod1 %>%
+  dplyr::mutate(List = "Sporadic PD") %>%
+  dplyr::filter(module %in% c("green", "black"))
+OLG_PD_mod <- dplyr::bind_rows(OLG_PD_mendelian_mod2, OLG_PD_GWAS_mod2)
+OLG_PD_mod$Network <- "Oligodendrocyte-corrected"
+# Join all 4 network results into one table
+PD_fig <- do.call(rbind, list(N_PD_mod, MA_PD_mod, MG_PD_mod, OLG_PD_mod))
+PD_fig$`-log10(FDR)` <- -log10(PD_fig$FDR)
+PD_fig <- dplyr::select(PD_fig, List, module, FDR, `-log10(FDR)`, Network)
+# Add in empty row for 'salmon4' module so it lines up with NSL figure 
+PD_fig <- rbind(PD_fig, c("zzz", "salmon4", 1, 1, "Neuron-corrected"))
+PD_fig$`-log10(FDR)` <- as.numeric(PD_fig$`-log10(FDR)`)
+PD_fig$FDR <- as.numeric(PD_fig$FDR)
+# Alter names 
+PD_fig$module[PD_fig$module=="salmon4"] <- "salmon4 (KAT8)"
+PD_fig$module[PD_fig$module=="darkslateblue"] <- "darkslateblue (KANSL1)"
+PD_fig$module[PD_fig$module=="red" & PD_fig$Network == "Astrocyte-corrected"] <- "red (KAT8)"
+PD_fig$module[PD_fig$module=="cyan"] <- "cyan (KANSL1)"
+PD_fig$module[PD_fig$module=="magenta"] <- "magenta (KAT8)"
+PD_fig$module[PD_fig$module=="red"& PD_fig$Network == "Microglia-corrected"] <- "red (KANSL1)"
+PD_fig$module[PD_fig$module=="green"] <- "green (KANSL1)"
+PD_fig$module[PD_fig$module=="black"] <- "black (KAT8)"
+```
+
+```{r}
+# Produce plot
+ggplot(PD_fig, aes(List, module)) +
+  geom_tile(aes(fill = `-log10(FDR)`)) +
+  geom_text(aes(label = signif.num(FDR)), size = 2) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4", limits = c(0,3.8)) +
+  labs(y = "Module", size = 4) +
+  facet_grid(factor(Network, 
+                    levels = c("Neuron-corrected", 
+                               "Astrocyte-corrected", 
+                               "Microglia-corrected", 
+                               "Oligodendrocyte-corrected")) ~ ., 
+             scales = "free", space = "free") +
+  theme(
+    strip.text.y = element_text(angle = 90, size = 6), 
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+Each of the cell type corrections succeeded in increasing the number of cell type enrichments associated with GCN modules and the genes therein. These results were thus collated together to evaluate the cell type specific activity of the **NSL genes**. 
+```{r}
+# Format PD list enrichment tables
+MA_PD_fig <- MA_PD_mod %>%
+  dplyr::select(List, module, Network) %>% 
+  dplyr::rename(Module = module)
+MG_PD_fig <- MG_PD_mod %>%
+  dplyr::select(List, module, Network) %>% 
+  dplyr::rename(Module = module)
+OLG_PD_fig <- OLG_PD_mod %>%
+  dplyr::select(List, module, Network) %>% 
+  dplyr::rename(Module = module)
+PD_mendelian_rep$List <- "Mendelian PD"
+PD_GWAS_rep$List <- "Sporadic PD"
+prim_PD_rep <- bind_rows(PD_mendelian_rep, PD_GWAS_rep)
+gtex_PD_fig <- dplyr::select(prim_PD_rep, List, module)
+gtex_PD_fig$Network <- "None"
+gtex_PD_fig <- gtex_PD_fig %>% dplyr::rename(Module = module)
+# Filter cell type enrichment tables for only modules PD genes appear in
+MA_mod_enrich_PD <- MA_mod_enrich %>%
+  dplyr::select(one_of(MA_PD_mendelian_mod1$module)) %>%
+  dplyr::filter_all(any_vars(.<0.05)) 
+MA_mod_enrich_PD <- as.data.frame(t(MA_mod_enrich_PD)) %>%
+  rownames_to_column(var = "Module")
+MG_mod_enrich_PD <- MG_mod_enrich %>%
+  dplyr::select(one_of(MG_PD_mendelian_mod1$module)) %>%
+  dplyr::filter_all(any_vars(.<0.05)) 
+MG_mod_enrich_PD <- as.data.frame(t(MG_mod_enrich_PD)) %>%
+  rownames_to_column(var = "Module")
+OLG_mod_enrich_PD <- OLG_mod_enrich %>%
+  dplyr::select(one_of(OLG_PD_mendelian_mod1$module)) %>%
+  dplyr::filter_all(any_vars(.<0.05)) 
+OLG_mod_enrich_PD <- as.data.frame(t(OLG_mod_enrich_PD)) %>%
+  rownames_to_column(var = "Module")
+gtex_enrich_PD <- gtex_enrich %>%
+  dplyr::select(one_of(gtex_PD_fig$Module)) %>%
+  dplyr::filter_all(any_vars(.<0.05)) 
+gtex_enrich_PD <- as.data.frame(t(gtex_enrich_PD)) %>%
+  rownames_to_column(var = "Module")
+# Join together 
+MA_PD_figure <- dplyr::full_join(MA_mod_enrich_PD, MA_PD_fig, by = "Module")
+MA_PD_figure <- dplyr::filter_all(MA_PD_figure, any_vars(.<1))
+MG_PD_figure <- dplyr::full_join(MG_mod_enrich_PD, MG_PD_fig, by = "Module")
+MG_PD_figure <- dplyr::filter_all(MG_PD_figure, any_vars(.<1))
+OLG_PD_figure <- dplyr::full_join(OLG_mod_enrich_PD, OLG_PD_fig, by = "Module")
+OLG_PD_figure <- dplyr::filter_all(OLG_PD_figure, any_vars(.<1))
+gtex_PD_figure <- dplyr::full_join(gtex_enrich_PD, gtex_PD_fig, by = "Module")
+gtex_PD_figure <- dplyr::filter_all(gtex_PD_figure, any_vars(.<1))
+big_PDfigure <- bind_rows(MA_PD_figure, MG_PD_figure, OLG_PD_figure, gtex_PD_figure)
+big_PDfigure <- big_PDfigure[,c(14,15,1:13,16:22)]
+# Reformat
+big_PDfigure2 <- tidyr::gather(big_PDfigure, key = "Cell_type", value = "Enrichment", 4:22, -Network)
+big_PDfigure2$`-log10(p.value)` <- -log10(big_PDfigure2$Enrichment)
+big_PDfigure2$`-log10(p.value)` <- as.numeric(big_PDfigure2$`-log10(p.value)`)
+big_PDfigure2$`-log10(p.value)`[is.na(big_PDfigure2$`-log10(p.value)`)] <- 0
+# Remove cell types with no enrichments per network
+big_PDfigure3 <- big_PDfigure2 %>%
+  dplyr::filter(Enrichment < 1)  %>%
+  dplyr::arrange(Cell_type)
+```
+
+```{r}
+# Produce plot
+ggplot(big_PDfigure3, aes(List, Cell_type)) +
+  geom_tile(aes(fill = `-log10(p.value)`)) +
+  geom_text(aes(label = signif.num2(Enrichment)), size = 3) +
+  scale_fill_gradient(low = "white", high = "lightsteelblue4") +
+  labs(y = "Cell type", fill = "-log10(p-value)") +
+  facet_grid(factor(Network, 
+                    levels = c("None", 
+                               "Astrocyte-corrected", 
+                               "Microglia-corrected", 
+                               "Oligodendrocyte-corrected")) ~ ., 
+             scales = "free", space = "free") +
+  theme(strip.text.y = element_text(angle = 90, size = 6), axis.text = element_text(size = 6))
+```
