@@ -22,7 +22,7 @@ It needs a series of files to work with, and a series of paths. We are using the
 There are two functions which basically allow you to indicate where is each Java element (the virtual machine and the Arance software) that you need. The `gjp()` function returns the full path to the executable file of the Java virtual machine. The virtual machine is usually available for all users of the system so it will be installed in some general place, like `/usr/bin/java`. Aracne is the Java based software you will be using and normally you will install it under your path, so we use `gsp()` for that. I have it installed under a `soft` folder, i.e. `/Users/juanbot/soft/aracne/`.
 ```{r}
 gjp = function(){ return("/usr/bin/java")}
-gsp = function(){ return("~/NSL_PD_relationships/docs/ARACNe/")}
+gsp = function(){ return("~/NSL_PD_relationships/docs/")}
 ```
 
 And then comes the main software. These are the basic parameters: 
