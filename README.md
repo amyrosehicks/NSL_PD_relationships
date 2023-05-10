@@ -2,7 +2,7 @@
 
 # Background
 
-This repository contains code for the preprint found [here](https://doi.org/10.1101/2023.01.16.523926 ), which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
+This repository contains code for the preprint found [here](https://doi.org/10.1101/2023.01.16.523926), which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
 
 # Citation
 Please cite [this article](https://doi.org/10.1101/2023.01.16.523926).
@@ -31,7 +31,7 @@ The code in this repository is released under an MIT license. This repository is
 </tr>
 <tr class="even">
 <td><a href="docs" class="uri">docs</a></td>
-<td>Contains all <code>.Rmd</code>s and corresponding <code>.html</code>s describing and summarising analyses performed for this project.</a></td>
+<td>Contains all <code>.Rmd</code>s describing and summarising analyses performed for this project. Corresponding <code>.html</code>s can be viewed interactively [here](https://amyrosehicks.github.io/NSL_PD_relationships/)</a></td>
 </tr>
 <tr class="even">
 <td><a href="scripts" class="uri">scripts</a></td>
