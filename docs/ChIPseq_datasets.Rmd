@@ -1,0 +1,242 @@
+---
+title: "ChIPseq_datsets"
+author: "Amy Hicks"
+date: "27/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(biomaRt)
+library(tidyverse)
+library(ggplot2)
+library(GenomicRanges)
+library(rtracklayer)
+library(IRanges)
+library(here)
+library(vroom)
+library(ggtranscript)
+library(R.utils)
+library(cowplot)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Import files
+```{r}
+# Load biomart
+mart = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+```
+
+```{r, eval = FALSE}
+# Import data files
+H3K4me3 <- import.bw(file.path(here::here("data",
+                                          "ChIPseq",
+                                          "GSM4809272_ChIP_THP1_WT_aH3K4me3.bw")))
+NegCtrl <- import.bw(file.path(here::here("data",
+                                          "ChIPseq",
+                                          "GSM4809295_ChIP_THP1_sgNegCtrl_aH4K8ac.bw")))
+K2 <- import.bw(file.path(here::here("data",
+                                     "ChIPseq",
+                                     "GSM4809296_ChIP_THP1_sgKANSL2_aH4K8ac.bw")))
+K3<- import.bw(file.path(here::here("data",
+                                    "ChIPseq",
+                                    "GSM4809297_ChIP_THP1_sgKANSL3_aH4K8ac.bw")))
+K8<- import.bw(file.path(here::here("data",
+                                    "ChIPseq",
+                                    "GSM4809298_ChIP_THP1_sgKAT8_aH4K8ac.bw")))
+```
+
+# 2. Obtain transcript annotations
+```{r, eval = FALSE}
+# Genes of interest
+genes <- c("DGKQ", "NCKIPSD", "CTSB")
+# Obtain transcript annotations
+# Code from ggtranscript github
+gtf_path <- file.path(tempdir(), "Homo_sapiens.GRCh38.105.chr.gtf.gz")
+# Download ens 105 gtf
+download.file(
+    stringr::str_c(
+        "http://ftp.ensembl.org/pub/release-105/gtf/homo_sapiens/",
+        "Homo_sapiens.GRCh38.105.chr.gtf.gz"
+    ),
+    destfile = gtf_path
+)
+# Unzip gtf
+R.utils::gunzip(gtf_path)
+gtf_path <- gtf_path %>%
+    stringr::str_remove("\\.gz$")
+gtf <- rtracklayer::import(gtf_path)
+
+# Extract gene transcripts, convert to tibble()
+genes_annotations <-
+    gtf[!is.na(gtf$gene_name) & gtf$gene_name %in% genes] %>%
+    as.data.frame() %>%
+    dplyr::as_tibble() %>%
+    dplyr::select(
+        seqnames,
+        start,
+        end,
+        strand,
+        type,
+        gene_name,
+        transcript_name,
+        transcript_biotype
+    )
+# Save
+write.table(genes_annotations,
+            file = file.path(here::here("data", "Gene_lists", "QG_annotations.txt")), 
+            sep = "\t",
+            row.names = FALSE)
+```
+
+```{r}
+# Load
+genes_annotations <- read.delim(file = file.path(here::here("data", 
+                                                            "Gene_lists",
+                                                            "QG_annotations.txt")))
+# Add chromosome
+genes_annotations$seqnames <- sub("^","chr", genes_annotations$seqnames)
+```
+
+# 3. Plot coverage {.tabset}
+```{r}
+# Emil's function
+TranscriptCoveragePlot <-
+  function(seqnames, start, end, strand, gene_id, gtf, coverage1, coverage2, coverage3) {
+    # Filter gtf for gene of interest
+    gtf_filtered <- gtf %>% 
+      dplyr::filter(transcript_name == gene_id)
+    # loci used to filter data
+    locus_subset <- GRanges(seqnames = seqnames, 
+                            ranges = IRanges(start = start, 
+                                             end = end), 
+                            strand = strand)
+    # coverage data
+    coverage_data1 <- rtracklayer::import.bw(coverage1) %>% 
+      IRanges::subsetByOverlaps(., locus_subset) %>% 
+      as.data.frame() %>%
+      dplyr::mutate(dataset = "H3K4me3")
+    coverage_data2 <- rtracklayer::import.bw(coverage2) %>% 
+      IRanges::subsetByOverlaps(., locus_subset) %>% 
+      as.data.frame() %>%
+      dplyr::mutate(dataset = "H4K8ac- control")
+    coverage_data3 <- rtracklayer::import.bw(coverage3) %>% 
+      IRanges::subsetByOverlaps(., locus_subset) %>% 
+      as.data.frame()%>%
+      dplyr::mutate(dataset = "H4K8ac- KAT8")
+    coverage_data_all <- dplyr::bind_rows(coverage_data2, coverage_data3)
+    # Plot transcript
+    exons <- data.frame(gtf_filtered) %>% 
+      dplyr::filter(type == "exon")
+    introns <- exons %>% 
+      to_intron(group_var = "transcript_name")
+    CDS <- data.frame(gtf_filtered) %>% 
+      dplyr::filter(type == "CDS")
+    transcript_plot <-
+      exons %>%
+      ggplot(aes(
+        xstart = start, 
+        xend = end, 
+        y = gene_name)) +
+      geom_range(fill = "lightsteelblue4",
+                 height = 0.25) +
+      geom_range(#fill = "lightsteelblue4",
+                 data = CDS) +
+      geom_intron(
+        data = introns,
+        arrow.min.intron.length = 500,
+        arrow = grid::arrow(ends = "first", length = grid::unit(0.1, "inches"))
+        ) +
+      labs(y = "", x = "") +
+      xlim(start(locus_subset), end(locus_subset))+
+      theme(
+        strip.text.y = element_text(angle = 0, size = 7), 
+        axis.text = element_text(size = 6)
+        )
+    # Coverage data
+    coverage_plot1 <-
+      coverage_data1 %>%
+      ggplot(aes(
+        xmin = start,
+        xmax = end,
+        ymin = 0,
+        ymax = score
+        )) +
+      geom_rect(show.legend = F, alpha = 0.8, fill = "red4") +
+      facet_grid(rows = "dataset") +
+      xlim(start(locus_subset), end(locus_subset))+
+      theme(
+        strip.text.y = element_text(angle = 0, size = 7), 
+        axis.text = element_text(size = 6)
+        )
+    coverage_plot2 <-
+      coverage_data_all %>%
+      ggplot(aes(
+        xmin = start,
+        xmax = end,
+        ymin = 0,
+        ymax = score
+        )) +
+      geom_rect(show.legend = F, alpha = 0.8, fill = "goldenrod3") +
+      facet_grid(factor(dataset, 
+                         levels = c('H4K8ac- control','H4K8ac- KAT8'))~.) +
+      xlim(start(locus_subset), end(locus_subset)) +
+      labs(y = "Normalized read count", x = seqnames)+
+      theme(
+        strip.text.y = element_text(angle = 0, size = 7), 
+        axis.text = element_text(size = 6)
+        )
+    # Final plot
+    transcript_coverage_plot <-
+      cowplot::plot_grid(
+        transcript_plot,
+        coverage_plot1,
+        coverage_plot2,
+        ncol = 1,
+        align = "hv",
+        rel_heights = c(1, 1, 2),
+        axis = "lr"
+        )
+    return(transcript_coverage_plot)}
+```
+
+### NCKIPSD
+```{r}
+TranscriptCoveragePlot(seqnames = as.factor("chr3"),
+                       start = as.integer(48673844),
+                       end = as.integer(48686364),
+                       strand = as.factor("-"),
+                       gene_id = c("NCKIPSD-201"),
+                       gtf = genes_annotations,
+                       coverage1 = file.path(here::here("data","ChIPseq","GSM4809272_ChIP_THP1_WT_aH3K4me3.bw")),
+                       coverage2 = file.path(here::here("data","ChIPseq","GSM4809295_ChIP_THP1_sgNegCtrl_aH4K8ac.bw")),
+                       coverage3 = file.path(here::here("data","ChIPseq","GSM4809298_ChIP_THP1_sgKAT8_aH4K8ac.bw"))
+                       )
+```
+
+### CTSB
+```{r}
+TranscriptCoveragePlot(seqnames = as.factor("chr8"),
+                       start = as.integer(11842524),
+                       end = as.integer(11869533),
+                       strand = as.factor("-"),
+                       gene_id = c("CTSB-202"),
+                       genes_annotations,
+                       coverage1 = file.path(here::here("data","ChIPseq","GSM4809272_ChIP_THP1_WT_aH3K4me3.bw")),
+                       coverage2 = file.path(here::here("data","ChIPseq","GSM4809295_ChIP_THP1_sgNegCtrl_aH4K8ac.bw")),
+                       coverage3 = file.path(here::here("data","ChIPseq","GSM4809298_ChIP_THP1_sgKAT8_aH4K8ac.bw"))
+                       )
+```
+
+### DGKQ
+```{r}
+TranscriptCoveragePlot(seqnames = as.factor("chr4"),
+                       start = as.integer(958887),
+                       end = as.integer(975000),
+                       strand = as.factor("-"),
+                       gene_id = c("DGKQ-201"),
+                       genes_annotations,
+                       coverage1 = file.path(here::here("data","ChIPseq","GSM4809272_ChIP_THP1_WT_aH3K4me3.bw")),
+                       coverage2 = file.path(here::here("data","ChIPseq","GSM4809295_ChIP_THP1_sgNegCtrl_aH4K8ac.bw")),
+                       coverage3 = file.path(here::here("data","ChIPseq","GSM4809298_ChIP_THP1_sgKAT8_aH4K8ac.bw"))
+                       )
+```
