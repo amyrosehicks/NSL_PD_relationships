@@ -2,7 +2,12 @@
 title: "ChIPseq_datsets"
 author: "Amy Hicks"
 date: "27/04/2023"
-output: html_document
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -20,7 +25,10 @@ library(cowplot)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Publicly available ChIP-sequencing data published by [Radzisheuskaya et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8056186/) was downloaded via GEO. This data measured histone methylation and acetylation markers in wildtype and KANSL2/3/KAT8 knockdown THP-1 cells.
+
 # 1. Import files
+Data on H3K4me3 (GEO accession number: GSM4809272) and H4K8ac (GEO accession numbers: GSM4809295, GSM4809296, GSM4809297, GSM4809298) from  were downloaded directly from [here](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE158736).
 ```{r}
 # Load biomart
 mart = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
@@ -46,6 +54,7 @@ K8<- import.bw(file.path(here::here("data",
 ```
 
 # 2. Obtain transcript annotations
+Transcript annotations were obtained from ensembl for 3 genes of interest: *DGKQ, NCKIPSD* and *CTSB*.
 ```{r, eval = FALSE}
 # Genes of interest
 genes <- c("DGKQ", "NCKIPSD", "CTSB")
@@ -98,6 +107,7 @@ genes_annotations$seqnames <- sub("^","chr", genes_annotations$seqnames)
 ```
 
 # 3. Plot coverage {.tabset}
+Coverage of each of the ChIP-seq markers was plotted across the main transcript of each of the genes of interest
 ```{r}
 # Emil's function
 TranscriptCoveragePlot <-
@@ -199,7 +209,7 @@ TranscriptCoveragePlot <-
     return(transcript_coverage_plot)}
 ```
 
-### NCKIPSD
+## NCKIPSD
 ```{r}
 TranscriptCoveragePlot(seqnames = as.factor("chr3"),
                        start = as.integer(48673844),
@@ -213,7 +223,7 @@ TranscriptCoveragePlot(seqnames = as.factor("chr3"),
                        )
 ```
 
-### CTSB
+## CTSB
 ```{r}
 TranscriptCoveragePlot(seqnames = as.factor("chr8"),
                        start = as.integer(11842524),
@@ -227,7 +237,7 @@ TranscriptCoveragePlot(seqnames = as.factor("chr8"),
                        )
 ```
 
-### DGKQ
+## DGKQ
 ```{r}
 TranscriptCoveragePlot(seqnames = as.factor("chr4"),
                        start = as.integer(958887),
