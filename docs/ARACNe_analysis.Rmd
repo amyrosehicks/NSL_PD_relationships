@@ -32,7 +32,7 @@ Local functions are described in more detail in the `UsingAracne` markdown.
 ```{r, eval = FALSE}
 # Create fucntions for file paths
 gjp = function(){ return("/usr/bin/java")}
-gsp = function(){ return(file.path(here::here("docs", "ARACNe/")))}
+gsp = function(){ return(file.path(here::here("docs")))}
 # Create the function for running ARACNe
 runAracneMIJava = function(exp.file,
                            out.folder, 
