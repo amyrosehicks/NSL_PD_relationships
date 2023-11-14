@@ -34,25 +34,6 @@ Data on H3K4me3 (GEO accession number: GSM4809272) and H4K8ac (GEO accession num
 mart = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
 ```
 
-```{r, eval = FALSE}
-# Import data files
-H3K4me3 <- import.bw(file.path(here::here("data",
-                                          "ChIPseq",
-                                          "GSM4809272_ChIP_THP1_WT_aH3K4me3.bw")))
-NegCtrl <- import.bw(file.path(here::here("data",
-                                          "ChIPseq",
-                                          "GSM4809295_ChIP_THP1_sgNegCtrl_aH4K8ac.bw")))
-K2 <- import.bw(file.path(here::here("data",
-                                     "ChIPseq",
-                                     "GSM4809296_ChIP_THP1_sgKANSL2_aH4K8ac.bw")))
-K3<- import.bw(file.path(here::here("data",
-                                    "ChIPseq",
-                                    "GSM4809297_ChIP_THP1_sgKANSL3_aH4K8ac.bw")))
-K8<- import.bw(file.path(here::here("data",
-                                    "ChIPseq",
-                                    "GSM4809298_ChIP_THP1_sgKAT8_aH4K8ac.bw")))
-```
-
 # 2. Obtain transcript annotations
 Transcript annotations were obtained from ensembl for 3 genes of interest: *DGKQ, NCKIPSD* and *CTSB*.
 ```{r, eval = FALSE}
