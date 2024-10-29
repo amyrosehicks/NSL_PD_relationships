@@ -2,10 +2,10 @@
 
 # Background
 
-This repository contains code for the preprint found [here](https://doi.org/10.1101/2023.01.16.523926), which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
+This repository contains code for the paper found [here](https://doi.org/10.1093/brain/awad246), which used in silico analyses of publically available transcriptomic data to investigate the relationships between genes encoding the NSL complex and genes associated with Parkinson's disease. 
 
 # Citation
-Please cite [this article](https://doi.org/10.1101/2023.01.16.523926).
+Please cite [this article](https://doi.org/10.1093/brain/awad246).
 
 # License
 
