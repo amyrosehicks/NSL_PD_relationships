@@ -787,7 +787,8 @@ all_terms_gt_3regs %>%
                       y = reorder(go_term, Ratio),
                       fill = -log10(`FDR`))) +
   geom_col() +
-  scale_fill_gradient(high = "red4", low = "Lightgoldenrod") +
+  scale_fill_gradient(high = "red4", low = "Lightgoldenrod",
+                      limits = c(0,40)) +
   facet_grid(go_type ~., scales = "free", space = "free") +
   theme(strip.text.y = element_text(angle = 0))+
   labs(y = "", x = "Intersection ratio") +
