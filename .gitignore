@@ -54,3 +54,5 @@ vignettes/*.pdf
 /data/Gene_lists/mod_gene_lists/*.csv
 
 /iria/
+
+*.log
