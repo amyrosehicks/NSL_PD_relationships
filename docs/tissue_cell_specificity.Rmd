@@ -22,12 +22,13 @@ library(here)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-This markdown examines the tissue- and cell-type specificity of NSL complex genes using single-cell nuclear RNA-sequencing data. For the latter, the `MarkerGenes` repository was cloned from [Regina's github](https://github.com/RHReynolds/MarkerGenes.git) and run locally.  
+This markdown contains an exploration of the tissue- and cell-type specificity of non-specific lethal (NSL) complex genes. TPM values were obtained from the [GTEx portal](https://www.gtexportal.org/home/multiGeneQueryPage) denoting the relative expression across 13 different CNS regions and single-cell nuclear RNA-sequencing data from **substantia nigra** and **middle temporal gyrus** (MTG) were obtained from [Argwal et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7442652/) and the [Allen Brain Atlas](https://celltypes.brain-map.org/rnaseq/human/mtg) respectively. The `MarkerGenes` repository was cloned from [Regina's github](https://github.com/RHReynolds/MarkerGenes.git) and functions were run locally. 
 
-# 1. Cell type 
-## 1.1. Load data
-**Substantia nigra** data from [Argwal et al., 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7442652/) and human **middle temporal gyrus** (MTG) data from the [Allen Brain Atlas](https://celltypes.brain-map.org/rnaseq/human/mtg) were used.
-```{r}
+# 1. Set up
+Source data was obtained from the [GTEx portal](https://www.gtexportal.org/home/multiGeneQueryPage) and the `MarkerGenes` repository cloned from [Regina's github](https://github.com/RHReynolds/MarkerGenes.git).
+```{r, warning = FALSE}
+# Load TPMs
+NSL_gtex_tissueexp <- read_excel(file.path(here::here("data", "NSL_gtex_tissueexp.xlsx")))
 # Load specificity matrices
 load(file.path(here::here("data/MarkerGenes_source/AIBS2018_MTG.rda")))
 load(file.path(here::here("data/MarkerGenes_source/Agarwal2020_SNIG.rda")))
@@ -35,12 +36,34 @@ load(file.path(here::here("data/MarkerGenes_source/Agarwal2020_SNIG.rda")))
 NSL_file <- read.csv(file.path(here::here("data/Gene_lists/NSL_genes.csv")))
 names(NSL_file)[names(NSL_file)=="Symbol"] <- "Gene_symbol"
 NSL_genes <- as.character(NSL_file$Gene_symbol)
+# functions
+source(file.path(here::here("scripts/MarkerGenes_source/query_gene_ctd.R")))
+source(file.path(here::here("scripts/MarkerGenes_source/reorder_within.R")))
+source(file.path(here::here("scripts/MarkerGenes_source/summarise_specificity_plot.R")))
 ```
 
-## 1.2. Search genes
+# 2. Tissue specificty
+```{r}
+# Format for plot
+NSL_gtex_tissueexp$Median_TPM <- as.numeric(NSL_gtex_tissueexp$Median_TPM)
+NSL_gtex_tissueexp <- dplyr::arrange(NSL_gtex_tissueexp, Tissue)
+NSL_gtex_tissueexp$position <- nrow(NSL_gtex_tissueexp):1
+# Plot
+ggplot(NSL_gtex_tissueexp, aes(Gene, reorder(Tissue, position))) +
+  geom_tile(aes(fill = Median_TPM)) +
+  scale_fill_gradient(low = "white", high = "goldenrod3", limits = c(0,210)) +
+  labs(y = "Tissue", fill = "Median TPM") +
+  theme(
+    axis.text = element_text(size = 6),
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(4, "mm"))
+```
+
+# 3. Cell type specificty {.tabset}
+`query_gene_ctd`, `reorder_within` and `scale_x_reordered` functions were loaded locally.
 ```{r}
 # Query gene list
-source(file.path(here::here("scripts/MarkerGenes_source/query_gene_ctd.R")))
 specificity <- query_gene_ctd(genes = NSL_genes,
                               ctd_Agarwal2020_SNIG, ctd_AIBS2018,
                               celltypeLevel = 1,
@@ -48,11 +71,6 @@ specificity <- query_gene_ctd(genes = NSL_genes,
                               genelistSpecies = "human",
                               ctdSpecies = "human")
 specificity$CellType <- as.character(specificity$CellType)
-```
-
-## 1.3. Plot results
-```{r}
-# Rename cell types
 specificity$CellType[specificity$CellType=="ODC"] <- "Oligodendrocytes"
 specificity$CellType[specificity$CellType=="Oligodendrocyte"] <- "Oligodendrocytes"
 specificity$CellType[specificity$CellType=="Astrocyte"] <- "Astrocytes"
@@ -65,8 +83,11 @@ specificity$CellType[specificity$CellType=="Glutamatergic"] <- "Glutamatergic ne
 specificity$CellType[specificity$CellType=="OPC"] <- "Oligodendrocyte precursor cells"
 specificity$Study[specificity$Study=="ctd_Agarwal2020_SNIG"] <- "Substantia nigra"
 specificity$Study[specificity$Study=="ctd_AIBS2018"] <- "Medial temporal gyrus"
-# Plot results
-source(file.path(here::here("scripts/MarkerGenes_source/reorder_within.R")))
+colnames(specificity)[colnames(specificity)=="Study_species"] <- "Species"
+```
+
+```{r}
+# Plot bar plots
 specificity %>% 
   ggplot(aes(x = reorder_within(x = CellType,
                                 by = Specificity,
@@ -81,6 +102,12 @@ specificity %>%
   theme(axis.text.x = element_text(angle = 90, size = 7, hjust = 1, vjust = 0.5))
 ```
 
+```{r}
+# Blot box and whisker
+summarise_specificity_plot(specificity)
+```
+
+## Substantia nigra
 ```{r}
 # Plot just substantia nigra neurons
 specificity %>% 
@@ -99,6 +126,34 @@ specificity %>%
   theme(axis.text.x = element_text(size = 7))
 ```
 
+These values were compared to the specificity of the rest of the genes within the dataset by plotting their quantiles (each gene is assigned to a bin, 1-40). The dotted line at 20 indicates the median mark. 
+```{r}
+# Quantiles
+sn_quantiles <- as.data.frame(ctd_Agarwal2020_SNIG[[1]]$specificity_quantiles)
+sn_quantiles <- rownames_to_column(sn_quantiles, var = "Gene")
+sn_quantiles2 <- sn_quantiles %>%
+  tidyr::gather(key = CellType, "Quantile", 2:8) %>% 
+  dplyr::mutate(Species = c("human")) %>%
+  dplyr::mutate(Study = c("Substantia nigra"))
+# Filter for NSL genes
+sn_quantiles2 %>%
+  dplyr::filter(Gene %in% NSL_genes) %>%
+  ggplot(aes(x = reorder_within(x = Gene,
+                                by = Quantile,
+                                within = Study,
+                                fun = median,
+                                desc = TRUE),
+             y = Quantile)) +
+  geom_col(fill = "goldenrod3") +
+  geom_hline(yintercept = 20, linetype = "dashed", color = "gray30") +
+  ylim(0,40) +
+  scale_x_reordered() +
+  facet_grid(CellType ~., scales = "free", space = "free") +
+  labs(x = "Gene") +
+  theme(strip.text.y = element_text(angle = 0), axis.text = element_text(size = 6))
+```
+
+## Medial temporal gyrus
 ```{r}
 # Plot just MTG neurons
 specificity %>% 
@@ -117,23 +172,5 @@ specificity %>%
   theme(axis.text.x = element_text(size = 7))
 ```
 
-# 2. Tissue specificty
-## 2.1. Load data
-Median transcripts per million (TPM) values for the NSL genes across **13 brain regions** were taken from [GTEx](https://www.gtexportal.org/home/). 
-```{r}
-# Open file
-NSL_gtex_tissueexp <- read_excel(file.path(here::here("data/NSL_gtex_tissueexp.xlsx")))
-```
-
-## 2.2. Plot results
-```{r}
-# Format for plot
-NSL_gtex_tissueexp$Median_TPM <- as.numeric(NSL_gtex_tissueexp$Median_TPM)
-NSL_gtex_tissueexp <- dplyr::arrange(NSL_gtex_tissueexp, Tissue)
-NSL_gtex_tissueexp$position <- nrow(NSL_gtex_tissueexp):1
-# Plot
-ggplot(NSL_gtex_tissueexp, aes(Gene, reorder(Tissue, position))) +
-  geom_tile(aes(fill = Median_TPM)) +
-  scale_fill_gradient(low = "white", high = "goldenrod3") +
-  labs(y = "Tissue")
-```
+## Enrichment tests
+Recent updates to the `EWCE` package have rendered some of Regina's functions and all of the specificity matrices unusable for the enrichment analysis. It also requires a more up to date version of `R` than is installed on the server. Thus, the new package version must be run via a docker and use newly generated matrices. So far Regina has regenerated the Allen Brain Atlas matrix.
