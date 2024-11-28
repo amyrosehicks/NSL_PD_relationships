@@ -29,7 +29,10 @@ names(NSL_file)[names(NSL_file)=="Symbol"] <- "Gene_symbol"
 # Open ensembl
 ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
 # Find corresponding ENSGs
-NSL_ENSGs_list <- getBM(attributes = c("hgnc_symbol", "ccds", "ensembl_gene_id"), filters = "hgnc_symbol", values = NSL_file, mart = ensembl)
+NSL_ENSGs_list <- getBM(attributes = c("hgnc_symbol", "ccds", "ensembl_gene_id"), 
+                        filters = "hgnc_symbol", 
+                        values = NSL_file, 
+                        mart = ensembl)
 # Retain only primary assembly ENSGs
 NSL_list <- NSL_ENSGs_list[!(NSL_ENSGs_list$ccds==""), ] %>%
   dplyr::distinct(ensembl_gene_id, .keep_all = TRUE) %>%
